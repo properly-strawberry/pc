@@ -112,6 +112,7 @@ header a {
   transform-origin: bottom;
   transform: perspective(1000px) rotateX(45deg);
   background-color: #999;
+  user-select: none;
   padding: 10px;
   display: flex;
   gap: 40px;
@@ -136,12 +137,17 @@ header a {
   box-sizing: border-box;
 }
 
-/* .keyboard span:hover
-{
+.keyboard span:hover {
     background: #aaa;
     border: 4px solid #666;
     padding-top: 10px;
-} */
+}
+
+.keyboard span:active {
+    background: #999;
+    border: 4px solid #666;
+    padding-top: 10px;
+}
 
 .keyboard .space {
   flex-grow: 1;
