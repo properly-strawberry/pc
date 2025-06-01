@@ -173,20 +173,34 @@ header a {
   gap: 8px;
 }
 
+.keyboard .hidden-key {
+  visibility: hidden;
+}
+
+.keyboard .tab {
+  min-width: 85px;
+}
+
+.keyboard .capslock {
+  min-width: 105px;
+}
+
+.keyboard .left-shift {
+  min-width: 135px;
+}
+
 .keyboard .ctrl {
   min-width: 80px;
 }
 
-.keyboard .big {
-  min-width: 120px;
+.keyboard .zero {
+  min-width: 116px;
 }
 
-.keyboard .bigger {
-  min-width: 140px;
-}
-
-.keyboard .biggest {
-  min-width: 170px;
+.keyboard .enter {
+  position: relative;
+  top: -100%;
+  min-height: 200%;
 }
 
 .keyboard .fill {
