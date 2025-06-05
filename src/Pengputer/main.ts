@@ -503,6 +503,14 @@ class PengOS {
     }
   }
 
+  private commandHistory(args: string[], previousEntries: string[]) {
+    const { screen } = this.pc;
+    screen.printString(`Last run commands:\n`);
+    for (const cmd of previousEntries) {
+      screen.printString(`${cmd}\n`);
+    }
+  }
+
   private commandHelp() {
     const { screen } = this.pc;
     screen.printString("\x1Bbshelp      \x1BbrList available commands\n");
@@ -524,6 +532,7 @@ class PengOS {
     screen.printString(
       "\x1Bbsdrop      \x1BbrRemove a program from the command list\n"
     );
+    screen.printString("\x1Bbshistory   \x1BbrView previously run commands\n");
     screen.printString("\x1Bbsreboot    \x1BbrRestart the system\n");
 
     if (this.takenPrograms.length > 0) {
@@ -537,7 +546,7 @@ class PengOS {
   async mainLoop() {
     const { screen, keyboard, fileSystem } = this.pc;
 
-    const previousEntries: string[] = [];
+    let previousEntries: string[] = [];
 
     const commands: Record<string, (args: string[]) => void | Promise<void>> = {
       help: this.commandHelp.bind(this),
@@ -552,6 +561,7 @@ class PengOS {
       prompt: this.commandPrompt.bind(this),
       take: this.commandTake.bind(this),
       drop: this.commandDrop.bind(this),
+      history: (args) => this.commandHistory(args, previousEntries),
       reboot: this.commandReboot.bind(this),
     };
 
@@ -581,6 +591,7 @@ class PengOS {
         "prompt",
         "take",
         "drop",
+        "history",
         "reboot",
       ];
 
@@ -589,6 +600,9 @@ class PengOS {
         previousEntries,
       });
       previousEntries.push(commandString);
+      if (previousEntries.length > 16) {
+        previousEntries = previousEntries.slice(1);
+      }
       const args = argparse(commandString);
       const commandName = args[0];
       if (commandName) {
