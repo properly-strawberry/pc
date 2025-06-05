@@ -1,7 +1,10 @@
-import { AudioFile } from "./AudioFile";
-import { ImageFile } from "./ImageFile";
-import { LinkFile, LinkOpenType } from "./LinkFile";
-import { TextFile } from "./TextFile";
+import {
+  AudioFile,
+  ImageFile,
+  LinkFile,
+  LinkOpenType,
+  TextFile,
+} from "./fileTypes";
 
 export enum FileSystemObjectType {
   Directory = "dir",

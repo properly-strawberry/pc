@@ -1,4 +1,4 @@
-import { loadImageBitmapFromUrl } from "../Functions";
+import { loadImageBitmapFromUrl } from "../../Functions";
 
 export class ImageFile {
   private src: string;

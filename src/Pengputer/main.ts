@@ -10,8 +10,6 @@ import {
 } from "../Functions";
 import { Directory, FileSystem, FileSystemObjectType } from "./FileSystem";
 import { PC } from "./PC";
-import { TextFile } from "./TextFile";
-import { AudioFile } from "./AudioFile";
 import { HelloWorld } from "./HelloWorld";
 import { EightBall } from "./EightBall";
 import { DateApp } from "./DateApp";
@@ -27,8 +25,7 @@ import mountainKingOgg from "./files/documents/music/mountainking.ogg";
 import passportOgg from "./files/documents/music/PASSPORT.ogg";
 import nerdgerPng from "./files/documents/pengers/nerdger.png";
 import macgerPng from "./files/documents/pengers/macger.png";
-import { ImageFile } from "./ImageFile";
-import { LinkFile } from "./LinkFile";
+import { ImageFile, TextFile, AudioFile, LinkFile } from "./fileTypes";
 import { argparse } from "../Functions/argparse";
 import { PrintArgs } from "./PrintArgs";
 
@@ -420,11 +417,13 @@ class PengOS {
       } else if (fileEntry.type === FileSystemObjectType.Image) {
         screen.clear();
         const image = await fileEntry.data.load();
-        screen.drawImageAt(image, 0, 0);
-        screen.setCursorPositionDelta({
-          x: 0,
-          y: Math.ceil(image.height / screen.getCharacterSize().h),
-        });
+        if (image) {
+          screen.drawImageAt(image, 0, 0);
+          screen.setCursorPositionDelta({
+            x: 0,
+            y: Math.ceil(image.height / screen.getCharacterSize().h),
+          });
+        }
       } else if (
         fileEntry.type === FileSystemObjectType.Link &&
         fileEntry.openType === "open"
