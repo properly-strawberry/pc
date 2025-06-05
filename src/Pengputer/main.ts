@@ -13,6 +13,7 @@ import { PC } from "./PC";
 import { TextFile } from "./TextFile";
 import { AudioFile } from "./AudioFile";
 import { HelloWorld } from "./HelloWorld";
+import { EightBall } from "./EightBall";
 import { DateApp } from "./DateApp";
 import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
 import { CgaColors } from "../Color/types";
@@ -108,6 +109,13 @@ class PengOS {
       name: "hello.exe",
       data: new HelloWorld(this.pc),
     });
+
+    softwareDir.addItem({
+      type: FileSystemObjectType.Executable,
+      name: "8ball.exe",
+      data: new EightBall(this.pc),
+    });
+
     softwareDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "args.exe",
