@@ -514,6 +514,7 @@ class PengOS {
   private commandHelp() {
     const { screen } = this.pc;
     screen.printString("\x1Bbshelp      \x1BbrList available commands\n");
+    screen.printString("\x1Bbshistory   \x1BbrView previously run commands\n");
     screen.printString(
       "\x1Bbslook      \x1BbrDisplay contents of current directory\n"
     );
@@ -532,7 +533,6 @@ class PengOS {
     screen.printString(
       "\x1Bbsdrop      \x1BbrRemove a program from the command list\n"
     );
-    screen.printString("\x1Bbshistory   \x1BbrView previously run commands\n");
     screen.printString("\x1Bbsreboot    \x1BbrRestart the system\n");
 
     if (this.takenPrograms.length > 0) {
@@ -551,6 +551,7 @@ class PengOS {
     const commands: Record<string, (args: string[]) => void | Promise<void>> = {
       help: this.commandHelp.bind(this),
       h: this.commandHelp.bind(this),
+      history: (args) => this.commandHistory(args, previousEntries),
       look: this.commandLook.bind(this),
       go: this.commandGo.bind(this),
       up: this.commandUp.bind(this),
@@ -561,7 +562,6 @@ class PengOS {
       prompt: this.commandPrompt.bind(this),
       take: this.commandTake.bind(this),
       drop: this.commandDrop.bind(this),
-      history: (args) => this.commandHistory(args, previousEntries),
       reboot: this.commandReboot.bind(this),
     };
 
@@ -581,6 +581,7 @@ class PengOS {
       autoCompleteStrings = [
         ...autoCompleteStrings,
         "help",
+        "history",
         "look",
         "go",
         "up",
@@ -591,7 +592,6 @@ class PengOS {
         "prompt",
         "take",
         "drop",
-        "history",
         "reboot",
       ];
 
