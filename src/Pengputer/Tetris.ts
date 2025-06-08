@@ -1,3 +1,9 @@
+/*
+Sources:
+- https://listfist.com/list-of-tetris-levels-by-speed-nes-ntsc-vs-pal
+- https://tetris.wiki/Tetris_(NES)
+*/
+
 import _ from "lodash";
 import { readKey, readLine, waitFor } from "../Functions";
 import { getIsPositionInRect, Vector, Rect, Size } from "../types";
@@ -77,6 +83,9 @@ const BORDER_SIZE = 1;
 const NUM_CELLS = WIDTH * HEIGHT;
 const BOARD_RECT: Rect = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
 
+const DAS_DELAY_LENGTH = 16 * msPerFrame;
+const DAS_LENGTH = 6 * msPerFrame;
+
 enum Piece {
   I = "I",
   O = "O",
@@ -148,6 +157,8 @@ class FallingPiece {
   private stepCounter: number;
 
   private direction: Vector;
+  private dasDelayCounter: number;
+  private dasCounter: number;
 
   constructor(piece: Piece, level: Level) {
     this.descriptor = pieceDescriptors[piece];
@@ -158,6 +169,10 @@ class FallingPiece {
 
     this.msPerCell = level.msPerCell;
     this.stepCounter = this.msPerCell;
+
+    this.direction = { x: 0, y: 0 };
+    this.dasDelayCounter = DAS_DELAY_LENGTH;
+    this.dasCounter = 0;
   }
 
   public draw(screen: Screen, boardScreenRect: Rect) {
@@ -211,6 +226,27 @@ class FallingPiece {
       this.stepCounter += this.msPerCell;
       this.step();
     }
+
+    if (this.getIsMoving()) {
+      if (this.dasDelayCounter > 0) {
+        this.dasDelayCounter = Math.max(0, this.dasDelayCounter - dt);
+      }
+      if (this.dasDelayCounter === 0) {
+        this.dasCounter = Math.max(0, this.dasCounter - dt);
+        if (this.dasCounter === 0) {
+          console.log("move");
+
+          this.dasCounter = DAS_LENGTH;
+        }
+      }
+    } else {
+      this.dasDelayCounter = DAS_DELAY_LENGTH;
+      this.dasCounter = 0;
+    }
+  }
+
+  private getIsMoving() {
+    return this.direction.x !== 0 || this.direction.y !== 0;
   }
 
   public setDirection(direction: Vector) {
@@ -350,6 +386,18 @@ export class Tetris implements Executable {
         }
         if (beenPressed.has("Enter")) {
           resolve();
+        }
+        if (this.fallingPiece) {
+          if (beenPressed.has("ArrowLeft")) {
+            this.fallingPiece.setDirection({ x: -1, y: 0 });
+          } else if (beenPressed.has("ArrowRight")) {
+            this.fallingPiece.setDirection({ x: 1, y: 0 });
+          } else if (
+            !keyboard.getIsKeyPressed("ArrowLeft") &&
+            !keyboard.getIsKeyPressed("ArrowRight")
+          ) {
+            this.fallingPiece.setDirection({ x: 0, y: 0 });
+          }
         }
         keyboard.resetWereKeysPressed();
 
