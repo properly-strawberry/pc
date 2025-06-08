@@ -6,7 +6,7 @@ import {
 import { font9x16 } from "./font9x16";
 import { CgaColors } from "../Color/types";
 import { ScreenCharacter, ScreenCharacterAttributes } from "./types";
-import { Position, Rect, Size, StringLike } from "../types";
+import { Vector, Rect, Size, StringLike } from "../types";
 import { getIsPrintable } from "./getIsPrintable";
 
 const stringLikeToArray = (s: StringLike) => {
@@ -353,27 +353,27 @@ export class Screen {
     this.curEnd = end;
   }
 
-  getCursorPosition(): Position {
+  getCursorPosition(): Vector {
     return { x: this.curX, y: this.curY };
   }
 
-  getCursorPositionPx(): Position {
+  getCursorPositionPx(): Vector {
     return {
       x: this.curX * this.characterWidth,
       y: this.curY * this.characterHeight,
     };
   }
 
-  setCursorPosition(pos: Position, shouldWrap: boolean = false) {
+  setCursorPosition(pos: Vector, shouldWrap: boolean = false) {
     const { x, y } = this._resolveCursorXPosition(pos, shouldWrap);
     this.curX = x;
     this.curY = Math.max(0, Math.min(this.heightInCharacters - 1, y));
   }
 
   private _resolveCursorXPosition(
-    pos: Position,
+    pos: Vector,
     shouldWrap: boolean = false
-  ): Position {
+  ): Vector {
     if (shouldWrap) {
       const newPos = { x: pos.x, y: pos.y };
       while (newPos.x < 0) {
@@ -393,7 +393,7 @@ export class Screen {
     }
   }
 
-  setCursorPositionDelta(delta: Position, shouldWrap: boolean = false) {
+  setCursorPositionDelta(delta: Vector, shouldWrap: boolean = false) {
     const newPosition = this.getCursorPosition();
     newPosition.x += delta.x;
     newPosition.y += delta.y;
@@ -404,7 +404,7 @@ export class Screen {
     return this.getCharacterAt(this.getCursorPosition());
   }
 
-  getCharacterAt(pos: Position) {
+  getCharacterAt(pos: Vector) {
     const { x, y } = pos;
     return this.screenBuffer[this._getScreenBufferIndex(x, y)];
   }
@@ -429,7 +429,7 @@ export class Screen {
     this.replaceCharacterAt(char, this.getCursorPosition());
   }
 
-  replaceCharacterAt(char: string, pos: Position) {
+  replaceCharacterAt(char: string, pos: Vector) {
     const { x, y } = pos;
     const bufferCharacter = this.screenBuffer[this._getScreenBufferIndex(x, y)];
     bufferCharacter.character = char;
@@ -450,7 +450,7 @@ export class Screen {
   replaceCharacterAndAttributesAt(
     character: string,
     attributes: ScreenCharacterAttributes,
-    pos: Position
+    pos: Vector
   ) {
     const { x, y } = pos;
     const bufferCharacter = this.screenBuffer[this._getScreenBufferIndex(x, y)];
@@ -568,7 +568,7 @@ export class Screen {
 
   /** Updates screen by writing a string with provided attributes. Optionally updates cursor position. */
   displayString(
-    pos: Position,
+    pos: Vector,
     string: StringLike,
     attributes: ScreenCharacterAttributes | undefined = undefined,
     shouldUpdateCursor: boolean = false

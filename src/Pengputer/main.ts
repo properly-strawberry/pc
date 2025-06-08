@@ -28,6 +28,7 @@ import macgerPng from "./files/documents/pengers/macger.png";
 import { ImageFile, TextFile, AudioFile, LinkFile } from "./fileTypes";
 import { argparse } from "../Functions/argparse";
 import { PrintArgs } from "./PrintArgs";
+import { Tetris } from "./Tetris";
 
 const PATH_SEPARATOR = "/";
 
@@ -246,6 +247,7 @@ class PengOS {
 
   printPrompt() {
     const { screen, prompt, currentDrive, currentPath } = this.pc;
+    screen.showCursor();
     screen.setCurrentAttributes({
       ...screen.getCurrentAttributes(),
       fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
@@ -544,6 +546,8 @@ class PengOS {
   }
 
   async mainLoop() {
+    const tetris = new Tetris(this.pc);
+    await tetris.run([]);
     const { screen, keyboard, fileSystem } = this.pc;
 
     let previousEntries: string[] = [];

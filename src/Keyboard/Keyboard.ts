@@ -4,7 +4,8 @@ export type TypeListener = (char: string | null, keyCode: string) => void;
 export type VoidListener = () => void;
 
 export class Keyboard {
-  private pressed: Set<any>;
+  private pressed: Set<string>;
+  private werePressed: Set<string>;
   private layout: any;
 
   private typeListeners: Array<TypeListener>;
@@ -18,6 +19,7 @@ export class Keyboard {
 
   constructor() {
     this.pressed = new Set();
+    this.werePressed = new Set();
     this.layout = ANSI_LAYOUT;
 
     window.addEventListener("keydown", this._onKeyDown.bind(this));
@@ -33,14 +35,15 @@ export class Keyboard {
     this.autorepeatEvent = null;
   }
 
-  _onKeyDown(e: KeyboardEvent) {
+  private _onKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     if (e.repeat) return;
     this.pressed.add(e.code);
+    this.werePressed.add(e.code);
     this._onKeyTyped(e);
   }
 
-  _onKeyUp(e: KeyboardEvent) {
+  private _onKeyUp(e: KeyboardEvent) {
     this.pressed.delete(e.code);
     if (this.autorepeatEvent?.code === e.code) {
       this._resetAutorepeat();
@@ -50,28 +53,36 @@ export class Keyboard {
     }
   }
 
-  _resetAutorepeat() {
+  public getWasKeyPressed() {
+    return this.werePressed;
+  }
+
+  public resetWereKeysPressed() {
+    this.werePressed.clear();
+  }
+
+  private _resetAutorepeat() {
     this.autorepeatEvent = null;
     this.autorepeatDelayCounter = this.autorepeatDelay;
     this.autorepeatIntervalCounter = 0;
   }
 
-  printState() {
+  public printState() {
     console["log"](this.pressed);
   }
 
-  getIsKeyPressed(keyCode: string) {
+  public getIsKeyPressed(keyCode: string) {
     return this.pressed.has(keyCode);
   }
 
-  addTypeListener(callback: TypeListener) {
+  public addTypeListener(callback: TypeListener) {
     this.typeListeners.push(callback);
     return () => {
       this.typeListeners = this.typeListeners.filter((cb) => cb !== callback);
     };
   }
 
-  addAllKeysUpListener(callback: VoidListener) {
+  public addAllKeysUpListener(callback: VoidListener) {
     this.allKeysUpListeners.push(callback);
     return () => {
       this.allKeysUpListeners = this.allKeysUpListeners.filter(
@@ -80,7 +91,7 @@ export class Keyboard {
     };
   }
 
-  _getCharFromLayout(ev: KeyboardEvent) {
+  private _getCharFromLayout(ev: KeyboardEvent) {
     const { code: keyCode } = ev;
     const isShiftDown = ev.getModifierState("Shift");
     const isCapsOn = ev.getModifierState("CapsLock");
@@ -113,7 +124,7 @@ export class Keyboard {
     return null;
   }
 
-  _onKeyTyped(ev: KeyboardEvent) {
+  private _onKeyTyped(ev: KeyboardEvent) {
     const char = this._getCharFromLayout(ev) ?? null;
     if (ev.code !== this.autorepeatEvent?.code) {
       this._resetAutorepeat();
@@ -122,7 +133,7 @@ export class Keyboard {
     this.typeListeners.forEach((callback) => callback(char, ev.code));
   }
 
-  update(dt: any) {
+  public update(dt: any) {
     if (this.autorepeatEvent) {
       this.autorepeatDelayCounter -= dt;
       if (this.autorepeatDelayCounter <= 0) {

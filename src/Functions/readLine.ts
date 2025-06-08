@@ -12,7 +12,7 @@ export const readLine = (
   }: {
     autoCompleteStrings?: string[];
     previousEntries?: string[];
-  }
+  } = {}
 ): Promise<string> => {
   let unsubType: (() => void) | null = null;
   const cursorStartPos = screen.getCursorPosition();
