@@ -6,10 +6,11 @@ Sources:
 
 import _ from "lodash";
 import { readKey, readLine, waitFor } from "../Functions";
-import { getIsPositionInRect, Vector, Rect, Size } from "../types";
+import { getIsPositionInRect, Rect, Size } from "../types";
 import { Executable } from "./FileSystem";
 import { PC } from "./PC";
 import { Screen } from "../Screen";
+import { Vector, vectorAdd, vectorEqual, zeroVector } from "../Toolbox/Vector";
 
 const msPerFrame = 16.666666666;
 
@@ -160,10 +161,14 @@ class FallingPiece {
   private dasDelayCounter: number;
   private dasCounter: number;
 
-  constructor(piece: Piece, level: Level) {
+  private ctx: Tetris;
+
+  constructor(ctx: Tetris, piece: Piece, level: Level) {
+    this.ctx = ctx;
     this.descriptor = pieceDescriptors[piece];
     this.size = { ...this.descriptor.size };
     this.position = { ...this.descriptor.spawnPosition };
+
     this.currentRotation = 0;
     this.grid = this.descriptor.rotations[this.currentRotation];
 
@@ -175,18 +180,20 @@ class FallingPiece {
     this.dasCounter = 0;
   }
 
-  public draw(screen: Screen, boardScreenRect: Rect) {
+  public draw() {
+    this.doForEachSquare((boardPosition) => {
+      this.ctx.drawSquare(boardPosition);
+    });
+  }
+
+  private doForEachSquare(fn: (boardPosition: Vector) => void) {
     for (let y = 0; y < this.size.h; y += 1) {
       for (let x = 0; x < this.size.w; x += 1) {
-        const screenPos = {
-          x: boardScreenRect.x + (this.position.x + x) * CELL_WIDTH,
-          y: boardScreenRect.y + (this.position.y + y) * CELL_HEIGHT,
-        };
-        if (
-          this.grid[y * this.size.w + x] === "X" &&
-          getIsPositionInRect(screenPos, boardScreenRect)
-        ) {
-          screen.displayString(screenPos, "██");
+        if (this.grid[y * this.size.w + x] === "X") {
+          fn({
+            x: this.position.x + x,
+            y: this.position.y + y,
+          });
         }
       }
     }
@@ -196,7 +203,7 @@ class FallingPiece {
     this.grid = this.descriptor.rotations[this.currentRotation];
   }
 
-  public rotateRight() {
+  private _rotateRight() {
     this.currentRotation += 1;
     while (this.currentRotation >= this.descriptor.rotations.length) {
       this.currentRotation -= this.descriptor.rotations.length;
@@ -204,12 +211,42 @@ class FallingPiece {
     this.updateGrid();
   }
 
-  public rotateLeft() {
+  public rotateRight() {
+    this._rotateRight();
+    if (this.getIsCollidingBoardEdges()) {
+      this._rotateLeft();
+    }
+  }
+
+  private _rotateLeft() {
     this.currentRotation -= 1;
     while (this.currentRotation < 0) {
       this.currentRotation += this.descriptor.rotations.length;
     }
     this.updateGrid();
+  }
+
+  public rotateLeft() {
+    this._rotateLeft();
+    if (this.getIsCollidingBoardEdges()) {
+      this._rotateRight();
+    }
+  }
+
+  private getIsCollidingBoardEdges() {
+    let isColliding = false;
+    this.doForEachSquare((pos) => {
+      isColliding = isColliding || !getIsPositionInRect(pos, BOARD_RECT);
+    });
+    return isColliding;
+  }
+
+  private moveInDirection() {
+    const oldPosition = this.position;
+    this.position = vectorAdd(this.position, this.direction);
+    if (this.getIsCollidingBoardEdges()) {
+      this.position = oldPosition;
+    }
   }
 
   public moveDown() {
@@ -218,6 +255,10 @@ class FallingPiece {
 
   public step() {
     this.position.y += 1;
+    if (this.getIsCollidingBoardEdges()) {
+      // hit ground
+      this.position.y -= 1;
+    }
   }
 
   public update(dt: number) {
@@ -227,15 +268,17 @@ class FallingPiece {
       this.step();
     }
 
+    let moveDt = dt;
     if (this.getIsMoving()) {
       if (this.dasDelayCounter > 0) {
-        this.dasDelayCounter = Math.max(0, this.dasDelayCounter - dt);
+        this.dasDelayCounter = this.dasDelayCounter - moveDt;
       }
-      if (this.dasDelayCounter === 0) {
-        this.dasCounter = Math.max(0, this.dasCounter - dt);
+      if (this.dasDelayCounter <= 0) {
+        moveDt += this.dasDelayCounter;
+        this.dasDelayCounter = 0;
+        this.dasCounter = Math.max(0, this.dasCounter - moveDt);
         if (this.dasCounter === 0) {
-          console.log("move");
-
+          this.moveInDirection();
           this.dasCounter = DAS_LENGTH;
         }
       }
@@ -246,11 +289,19 @@ class FallingPiece {
   }
 
   private getIsMoving() {
-    return this.direction.x !== 0 || this.direction.y !== 0;
+    return !vectorEqual(this.direction, zeroVector);
   }
 
   public setDirection(direction: Vector) {
-    this.direction = direction;
+    if (!vectorEqual(this.direction, direction)) {
+      this.direction = direction;
+
+      if (!vectorEqual(this.direction, zeroVector)) {
+        this.dasDelayCounter = DAS_DELAY_LENGTH;
+        this.dasCounter = 0;
+        this.moveInDirection();
+      }
+    }
   }
 }
 
@@ -305,18 +356,23 @@ export class Tetris implements Executable {
     );
   }
 
-  private getScreenPositionFromBoardPosition(boardPosition: Vector): Vector {
+  private getScreenPositionFromBoardPosition(
+    boardPosition: Vector
+  ): Vector | null {
+    if (!getIsPositionInRect(boardPosition, BOARD_RECT)) return null;
+
     return {
       x: this.boardScreenRect.x + boardPosition.x * CELL_WIDTH,
       y: this.boardScreenRect.y + boardPosition.y * CELL_HEIGHT,
     };
   }
 
-  private drawSquare(boardPosition: Vector) {
+  public drawSquare(boardPosition: Vector) {
     const { screen } = this.pc;
     const screenPos = this.getScreenPositionFromBoardPosition(boardPosition);
-    screen.setCursorPosition(screenPos);
-    screen.printString("██");
+    if (screenPos) {
+      screen.displayString(screenPos, "██");
+    }
   }
 
   private drawBorder() {
@@ -371,7 +427,7 @@ export class Tetris implements Executable {
       const { screen, keyboard } = this.pc;
       screen.hideCursor();
       this.init();
-      this.fallingPiece = new FallingPiece(Piece.S, levels[7]);
+      this.fallingPiece = new FallingPiece(this, Piece.T, levels[7]);
       let lastTime = performance.now();
 
       const doAnimationFrame: FrameRequestCallback = async () => {
@@ -408,7 +464,7 @@ export class Tetris implements Executable {
         // rendering
 
         this.drawBoard();
-        this.fallingPiece?.draw(screen, this.boardScreenRect);
+        this.fallingPiece?.draw();
 
         requestAnimationFrame(doAnimationFrame);
       };

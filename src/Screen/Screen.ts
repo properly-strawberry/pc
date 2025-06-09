@@ -6,8 +6,9 @@ import {
 import { font9x16 } from "./font9x16";
 import { CgaColors } from "../Color/types";
 import { ScreenCharacter, ScreenCharacterAttributes } from "./types";
-import { Vector, Rect, Size, StringLike } from "../types";
+import { Rect, Size, StringLike } from "../types";
 import { getIsPrintable } from "./getIsPrintable";
+import { Vector } from "../Toolbox/Vector";
 
 const stringLikeToArray = (s: StringLike) => {
   if (Array.isArray(s)) {
