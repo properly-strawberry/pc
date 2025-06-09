@@ -851,14 +851,14 @@ export class Screen {
 
     for (const c of daskish) {
       this.currentAttributes.bgColor = CGA_PALETTE_DICT[c];
-      this.currentAttributes.fgColor = CGA_PALETTE_DICT["white"];
+      this.currentAttributes.fgColor = CGA_PALETTE_DICT[CgaColors.White];
       this.printChar(`☺︎`);
     }
     this.printString(`\n`);
 
     for (const c of lightish) {
       this.currentAttributes.bgColor = CGA_PALETTE_DICT[c];
-      this.currentAttributes.fgColor = CGA_PALETTE_DICT["black"];
+      this.currentAttributes.fgColor = CGA_PALETTE_DICT[CgaColors.Black];
       this.printChar(`☺︎`);
     }
     this.printString(`\n`);

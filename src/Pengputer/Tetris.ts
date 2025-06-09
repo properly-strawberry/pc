@@ -2,6 +2,8 @@
 Sources:
 - https://listfist.com/list-of-tetris-levels-by-speed-nes-ntsc-vs-pal
 - https://tetris.wiki/Tetris_(NES)
+- https://tetris.fandom.com/wiki/Nintendo_Rotation_System
+- https://tetris.wiki/Tetris_Guideline
 */
 
 import _ from "lodash";
@@ -11,6 +13,8 @@ import { Executable } from "./FileSystem";
 import { PC } from "./PC";
 import { Screen } from "../Screen";
 import { Vector, vectorAdd, vectorEqual, zeroVector } from "../Toolbox/Vector";
+import { CgaColors } from "../Color/types";
+import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
 
 const msPerFrame = 16.666666666;
 
@@ -80,12 +84,13 @@ const WIDTH = 10;
 const HEIGHT = 20;
 const CELL_WIDTH = 2;
 const CELL_HEIGHT = 1;
-const BORDER_SIZE = 1;
+const BORDER_SIZE_H = 2;
+const BORDER_SIZE_V = 1;
 const NUM_CELLS = WIDTH * HEIGHT;
 const BOARD_RECT: Rect = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
 
-const DAS_DELAY_LENGTH = 16 * msPerFrame;
-const DAS_LENGTH = 6 * msPerFrame;
+const DAS_DELAY_LENGTH = 10 * msPerFrame;
+const DAS_LENGTH = 2 * msPerFrame;
 
 enum Piece {
   I = "I",
@@ -97,10 +102,21 @@ enum Piece {
   Z = "Z",
 }
 
+const sevenBag = [
+  Piece.I,
+  Piece.O,
+  Piece.J,
+  Piece.L,
+  Piece.S,
+  Piece.T,
+  Piece.Z,
+];
+
 interface PieceDescriptor {
   size: Size;
   rotations: Array<string>;
   spawnPosition: Vector;
+  color: string;
 }
 
 const pieceDescriptors: Record<Piece, PieceDescriptor> = {
@@ -108,41 +124,49 @@ const pieceDescriptors: Record<Piece, PieceDescriptor> = {
     size: { w: 4, h: 4 },
     rotations: ["        XXXX    ", "  X   X   X   X "],
     spawnPosition: { x: 3, y: -2 },
+    color: CGA_PALETTE_DICT[CgaColors.Cyan],
   },
   [Piece.O]: {
     size: { w: 2, h: 2 },
     rotations: ["XXXX"],
     spawnPosition: { x: 4, y: 0 },
+    color: CGA_PALETTE_DICT[CgaColors.Yellow],
   },
   [Piece.J]: {
     size: { w: 3, h: 3 },
     rotations: ["   XXX  X", " X  X XX ", "X  XXX   ", " XX X  X "],
     spawnPosition: { x: 4, y: -1 },
+    color: CGA_PALETTE_DICT[CgaColors.Blue],
   },
   [Piece.L]: {
     size: { w: 3, h: 3 },
     rotations: ["   XXXX  ", "XX  X  X ", "  XXXX   ", " X  X  XX"],
     spawnPosition: { x: 4, y: -1 },
+    color: CGA_PALETTE_DICT[CgaColors.Orange],
   },
   [Piece.S]: {
     size: { w: 3, h: 3 },
     rotations: ["    XXXX ", " X  XX  X", "    XXXX ", " X  XX  X"],
     spawnPosition: { x: 4, y: -1 },
+    color: CGA_PALETTE_DICT[CgaColors.Green],
   },
   [Piece.T]: {
     size: { w: 3, h: 3 },
     rotations: ["   XXX X ", " X XX  X ", " X XXX   ", " X  XX X "],
     spawnPosition: { x: 4, y: -1 },
+    color: CGA_PALETTE_DICT[CgaColors.Magenta],
   },
   [Piece.Z]: {
     size: { w: 3, h: 3 },
     rotations: ["   XX  XX", "  X XX X ", "   XX  XX", "  X XX X "],
     spawnPosition: { x: 4, y: -1 },
+    color: CGA_PALETTE_DICT[CgaColors.Red],
   },
 };
 
 interface Cell {
   filled: boolean;
+  color: string;
 }
 
 class FallingPiece {
@@ -152,7 +176,7 @@ class FallingPiece {
   private currentRotation: number;
   private grid: string;
 
-  private onCollide: Signal<void> = new Signal<void>();
+  public onPlaced: Signal<void> = new Signal<void>();
 
   private msPerCell: number;
   private stepCounter: number;
@@ -182,7 +206,7 @@ class FallingPiece {
 
   public draw() {
     this.doForEachSquare((boardPosition) => {
-      this.ctx.drawSquare(boardPosition);
+      this.ctx.drawSquare(boardPosition, this.descriptor.color);
     });
   }
 
@@ -213,7 +237,7 @@ class FallingPiece {
 
   public rotateRight() {
     this._rotateRight();
-    if (this.getIsCollidingBoardEdges()) {
+    if (this.getIsColliding()) {
       this._rotateLeft();
     }
   }
@@ -228,23 +252,43 @@ class FallingPiece {
 
   public rotateLeft() {
     this._rotateLeft();
-    if (this.getIsCollidingBoardEdges()) {
+    if (this.getIsColliding()) {
       this._rotateRight();
     }
   }
 
   private getIsCollidingBoardEdges() {
     let isColliding = false;
+    // add two rows to the top of the board rect for rotations
     this.doForEachSquare((pos) => {
-      isColliding = isColliding || !getIsPositionInRect(pos, BOARD_RECT);
+      isColliding =
+        isColliding ||
+        !getIsPositionInRect(pos, {
+          ...BOARD_RECT,
+          y: BOARD_RECT.y - 2,
+          h: BOARD_RECT.h + 2,
+        });
     });
     return isColliding;
+  }
+
+  private getIsCollidingBoard() {
+    const board = this.ctx.getBoard();
+    let isColliding = false;
+    this.doForEachSquare((pos) => {
+      isColliding = isColliding || Boolean(board.getCell(pos)?.filled);
+    });
+    return isColliding;
+  }
+
+  private getIsColliding() {
+    return this.getIsCollidingBoardEdges() || this.getIsCollidingBoard();
   }
 
   private moveInDirection() {
     const oldPosition = this.position;
     this.position = vectorAdd(this.position, this.direction);
-    if (this.getIsCollidingBoardEdges()) {
+    if (this.getIsColliding()) {
       this.position = oldPosition;
     }
   }
@@ -255,10 +299,19 @@ class FallingPiece {
 
   public step() {
     this.position.y += 1;
-    if (this.getIsCollidingBoardEdges()) {
+    if (this.getIsColliding()) {
       // hit ground
       this.position.y -= 1;
+      this.fillIn();
+      this.onPlaced.emit();
     }
+  }
+
+  private fillIn() {
+    const board = this.ctx.getBoard();
+    this.doForEachSquare((pos) => {
+      board.fillCell(pos, this.descriptor.color);
+    });
   }
 
   public update(dt: number) {
@@ -311,7 +364,10 @@ class Board {
   constructor() {
     this.board = new Array(NUM_CELLS);
     for (let i = 0; i < NUM_CELLS; i += 1) {
-      this.board[i] = { filled: false };
+      this.board[i] = {
+        filled: false,
+        color: CGA_PALETTE_DICT[CgaColors.LightGray],
+      };
     }
   }
 
@@ -319,8 +375,15 @@ class Board {
     return boardPosition.y * WIDTH + boardPosition.x;
   }
 
-  public getCell(pos: Vector): Cell {
-    return this.board[this.getBoardIndexFromBoardPosition(pos)];
+  public getCell(pos: Vector): Cell | null {
+    const idx = this.getBoardIndexFromBoardPosition(pos);
+    if (idx < 0 || idx > this.board.length) return null;
+    return this.board[idx];
+  }
+
+  public fillCell(pos: Vector, color: string): void {
+    this.board[this.getBoardIndexFromBoardPosition(pos)].filled = true;
+    this.board[this.getBoardIndexFromBoardPosition(pos)].color = color;
   }
 }
 
@@ -329,6 +392,9 @@ export class Tetris implements Executable {
   private board: Board;
   private boardScreenRect: Rect;
   private fallingPiece: FallingPiece | null = null;
+
+  private bag: Array<Piece>;
+  private bagIndex: number;
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -340,11 +406,17 @@ export class Tetris implements Executable {
     const screenSize = screen.getSizeInCharacters();
 
     this.boardScreenRect = {
-      x: Math.floor((screenSize.w - WIDTH * CELL_WIDTH - 2 * BORDER_SIZE) / 2),
-      y: screenSize.h - HEIGHT * CELL_HEIGHT - 2 * BORDER_SIZE,
+      x: Math.floor(
+        (screenSize.w - WIDTH * CELL_WIDTH - 2 * BORDER_SIZE_H) / 2
+      ),
+      y: screenSize.h - HEIGHT * CELL_HEIGHT - 1 * BORDER_SIZE_V,
       w: WIDTH * CELL_WIDTH,
       h: HEIGHT * CELL_HEIGHT,
     };
+
+    this.bag = [...sevenBag];
+    this.bagIndex = 0;
+    this.shuffleBag();
   }
 
   private init() {
@@ -354,6 +426,11 @@ export class Tetris implements Executable {
       { x: 0, y: 0 },
       _.pad("======== P E N G T R I S ========", screen.getSizeInCharacters().w)
     );
+  }
+
+  private shuffleBag() {
+    this.bag = _.shuffle(this.bag);
+    this.bagIndex = 0;
   }
 
   private getScreenPositionFromBoardPosition(
@@ -367,40 +444,44 @@ export class Tetris implements Executable {
     };
   }
 
-  public drawSquare(boardPosition: Vector) {
+  public drawSquare(boardPosition: Vector, color: string) {
     const { screen } = this.pc;
     const screenPos = this.getScreenPositionFromBoardPosition(boardPosition);
     if (screenPos) {
-      screen.displayString(screenPos, "██");
+      screen.setCurrentAttributes({
+        ...screen.getCurrentAttributes(),
+        bgColor: color,
+        fgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      });
+      screen.displayString(screenPos, "[]");
     }
   }
 
   private drawBorder() {
     const { screen } = this.pc;
-    screen.displayString(
-      {
-        x: this.boardScreenRect.x - 1,
-        y: this.boardScreenRect.y - 1,
-      },
-      // "╔" + "═".repeat(WIDTH * CELL_WIDTH) + "╗"
-      "╔00112233445566778899╗"
-    );
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+    });
     for (
       let y = this.boardScreenRect.y;
       y < this.boardScreenRect.y + HEIGHT * CELL_HEIGHT;
       y += 1
     ) {
       screen.displayString(
-        { x: this.boardScreenRect.x - 1, y },
-        "║" + " ".repeat(WIDTH * CELL_WIDTH) + "║"
+        { x: this.boardScreenRect.x - BORDER_SIZE_H, y },
+        "\x1Bsb07\x1Bsf00<!\x1Bsf08\x1Bsb00" +
+          " .".repeat(WIDTH) +
+          "\x1Bsb07\x1Bsf00!>"
       );
     }
     screen.displayString(
       {
-        x: this.boardScreenRect.x - 1,
+        x: this.boardScreenRect.x - BORDER_SIZE_H,
         y: this.boardScreenRect.y + HEIGHT * CELL_HEIGHT,
       },
-      "╚" + "═".repeat(WIDTH * CELL_WIDTH) + "╝"
+      "\x1Bsb07\x1Bsf00<!" + "=".repeat(WIDTH * CELL_WIDTH) + "!>"
     );
   }
 
@@ -409,8 +490,8 @@ export class Tetris implements Executable {
       for (let x = 0; x < WIDTH; x += 1) {
         const boardPos = { x, y };
         const cell = this.board.getCell(boardPos);
-        if (cell.filled) {
-          this.drawSquare(boardPos);
+        if (cell && cell.filled) {
+          this.drawSquare(boardPos, cell.color);
         }
       }
     }
@@ -422,14 +503,34 @@ export class Tetris implements Executable {
     this.drawBoardPieces();
   }
 
+  public getBoard() {
+    return this.board;
+  }
+
+  private spawnPiece() {
+    this.fallingPiece = new FallingPiece(
+      this,
+      this.bag[this.bagIndex],
+      levels[7]
+    );
+    this.fallingPiece.onPlaced.listen(() => {
+      this.spawnPiece();
+    });
+    this.bagIndex += 1;
+    if (this.bagIndex === this.bag.length) {
+      this.shuffleBag();
+    }
+  }
+
   async run(args: string[]) {
     return new Promise<void>((resolve) => {
       const { screen, keyboard } = this.pc;
       screen.hideCursor();
-      this.init();
-      this.fallingPiece = new FallingPiece(this, Piece.T, levels[7]);
-      let lastTime = performance.now();
 
+      this.init();
+      this.spawnPiece();
+
+      let lastTime = performance.now();
       const doAnimationFrame: FrameRequestCallback = async () => {
         const dt = performance.now() - lastTime;
         lastTime = performance.now();
