@@ -15,7 +15,6 @@ export const readLine = (
   } = {}
 ): Promise<string> => {
   let unsubType: (() => void) | null = null;
-  const cursorStartPos = screen.getCursorPosition();
   let isUsingPreviousEntry = false;
   let previousEntryIndex = 0;
   let savedResult = "";
@@ -59,13 +58,13 @@ export const readLine = (
           }
         }
       } else if (key === "Home") {
-        screen.setCursorPosition(cursorStartPos);
+        screen.setCursorPositionDelta({ x: -curIndex, y: 0 }, true);
         curIndex = 0;
       } else if (key === "End") {
-        screen.setCursorPosition(
+        screen.setCursorPositionDelta(
           {
-            x: cursorStartPos.x + result.length,
-            y: cursorStartPos.y,
+            x: result.length - curIndex,
+            y: 0,
           },
           true
         );
@@ -123,9 +122,9 @@ export const readLine = (
             replaceWith = previousEntries[previousEntryIndex];
           }
           if (replaceWith) {
-            screen.setCursorPosition(cursorStartPos);
+            screen.setCursorPositionDelta({ x: -curIndex, y: 0 }, true);
             screen.printString(" ".repeat(result.length));
-            screen.setCursorPosition(cursorStartPos);
+            screen.setCursorPositionDelta({ x: -result.length, y: 0 }, true);
             screen.printString(replaceWith);
             result = replaceWith;
             curIndex = replaceWith.length;
@@ -143,9 +142,9 @@ export const readLine = (
           } else {
             replaceWith = savedResult;
           }
-          screen.setCursorPosition(cursorStartPos);
+          screen.setCursorPositionDelta({ x: -curIndex, y: 0 }, true);
           screen.printString(" ".repeat(result.length));
-          screen.setCursorPosition(cursorStartPos);
+          screen.setCursorPositionDelta({ x: -result.length, y: 0 }, true);
           screen.printString(replaceWith);
           result = replaceWith;
           curIndex = replaceWith.length;
