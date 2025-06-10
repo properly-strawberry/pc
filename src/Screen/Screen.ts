@@ -271,6 +271,15 @@ export class Screen {
     return this.totalCharacters;
   }
 
+  getCharacterRect(): Rect {
+    return {
+      x: 0,
+      y: 0,
+      w: this.widthInCharacters,
+      h: this.heightInCharacters,
+    };
+  }
+
   //================================================= CANVAS HANDLING ==========================================
 
   private _getScreenBufferIndex(x: number, y: number) {

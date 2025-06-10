@@ -12,7 +12,13 @@ import { getIsPositionInRect, Rect, Size } from "../types";
 import { Executable } from "./FileSystem";
 import { PC } from "./PC";
 import { Screen } from "../Screen";
-import { Vector, vectorAdd, vectorEqual, zeroVector } from "../Toolbox/Vector";
+import {
+  Vector,
+  vectorAdd,
+  vectorClone,
+  vectorEqual,
+  zeroVector,
+} from "../Toolbox/Vector";
 import { CgaColors } from "../Color/types";
 import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
 
@@ -81,7 +87,8 @@ class Signal<D> {
 }
 
 const WIDTH = 10;
-const HEIGHT = 20;
+const HEIGHT = 40;
+const TOP_PADDING = 20;
 const CELL_WIDTH = 2;
 const CELL_HEIGHT = 1;
 const BORDER_SIZE_H = 2;
@@ -91,8 +98,10 @@ const BOARD_RECT: Rect = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
 
 const DAS_DELAY_LENGTH = 10 * msPerFrame;
 const DAS_LENGTH = 2 * msPerFrame;
+const ARE_DELAY = 6 * msPerFrame;
+const PUSHDOWN_LENGTH = 1 * msPerFrame;
 
-enum Piece {
+enum PieceKey {
   I = "I",
   O = "O",
   J = "J",
@@ -103,24 +112,29 @@ enum Piece {
 }
 
 const sevenBag = [
-  Piece.I,
-  Piece.O,
-  Piece.J,
-  Piece.L,
-  Piece.S,
-  Piece.T,
-  Piece.Z,
+  PieceKey.I,
+  PieceKey.O,
+  PieceKey.J,
+  PieceKey.L,
+  PieceKey.S,
+  PieceKey.T,
+  PieceKey.Z,
 ];
+
+interface PieceColor {
+  bgColor: string;
+  fgColor: string;
+}
 
 interface PieceDescriptor {
   size: Size;
   rotations: Array<string>;
   spawnPosition: Vector;
-  color: string;
+  color: PieceColor;
 }
 
-const pieceDescriptors: Record<Piece, PieceDescriptor> = {
-  [Piece.I]: {
+const pieceDescriptors: Record<PieceKey, PieceDescriptor> = {
+  [PieceKey.I]: {
     size: { w: 4, h: 4 },
     rotations: [
       "    XXXX        ",
@@ -128,71 +142,83 @@ const pieceDescriptors: Record<Piece, PieceDescriptor> = {
       "        XXXX    ",
       " X   X   X   X  ",
     ],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Cyan],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Cyan],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightCyan],
+    },
   },
-  [Piece.O]: {
+  [PieceKey.O]: {
     size: { w: 2, h: 2 },
     rotations: ["XXXX"],
-    spawnPosition: { x: 4, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Yellow],
+    spawnPosition: { x: 4, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Yellow],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightYellow],
+    },
   },
-  [Piece.J]: {
+  [PieceKey.J]: {
     size: { w: 3, h: 3 },
     rotations: ["X  XXX   ", " XX X  X ", "   XXX  X", " X  X XX "],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Blue],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Blue],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightBlue],
+    },
   },
-  [Piece.L]: {
+  [PieceKey.L]: {
     size: { w: 3, h: 3 },
     rotations: ["  XXXX   ", " X  X  XX", "   XXXX  ", "XX  X  X "],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Orange],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Orange],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightOrange],
+    },
   },
-  [Piece.S]: {
+  [PieceKey.S]: {
     size: { w: 3, h: 3 },
     rotations: [" XXXX    ", " X  XX  X", "    XXXX ", "X  XX  X "],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Green],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Green],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightGreen],
+    },
   },
-  [Piece.T]: {
+  [PieceKey.T]: {
     size: { w: 3, h: 3 },
     rotations: [" X XXX   ", " X  XX X ", "   XXX X ", " X XX  X "],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Magenta],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Violet],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightViolet],
+    },
   },
-  [Piece.Z]: {
+  [PieceKey.Z]: {
     size: { w: 3, h: 3 },
     rotations: ["XX  XX   ", "  X XX X ", "   XX  XX", " X XX X  "],
-    spawnPosition: { x: 3, y: -1 },
-    color: CGA_PALETTE_DICT[CgaColors.Red],
+    spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    color: {
+      fgColor: CGA_PALETTE_DICT[CgaColors.Red],
+      bgColor: CGA_PALETTE_DICT[CgaColors.LightRed],
+    },
   },
 };
 
 interface Cell {
   filled: boolean;
-  color: string;
+  color: PieceColor;
 }
 
-class FallingPiece {
+class Piece {
   private descriptor: PieceDescriptor;
   private size: Size;
-  private position: Vector;
+  public position: Vector;
   private currentRotation: number;
   private grid: string;
 
-  public onPlaced: Signal<void> = new Signal<void>();
-
-  private msPerCell: number;
-  private stepCounter: number;
-
-  private direction: Vector;
-  private dasDelayCounter: number;
-  private dasCounter: number;
-
   private ctx: Tetris;
 
-  constructor(ctx: Tetris, piece: Piece, level: Level) {
+  constructor(ctx: Tetris, piece: PieceKey) {
     this.ctx = ctx;
     this.descriptor = pieceDescriptors[piece];
     this.size = { ...this.descriptor.size };
@@ -200,13 +226,20 @@ class FallingPiece {
 
     this.currentRotation = 0;
     this.grid = this.descriptor.rotations[this.currentRotation];
+  }
 
-    this.msPerCell = level.msPerCell;
-    this.stepCounter = this.msPerCell;
+  public makeGhost() {
+    this.descriptor = {
+      ...this.descriptor,
+      color: {
+        fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+        bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      },
+    };
+  }
 
-    this.direction = { x: 0, y: 0 };
-    this.dasDelayCounter = DAS_DELAY_LENGTH;
-    this.dasCounter = 0;
+  public getDescriptor() {
+    return this.descriptor;
   }
 
   public draw() {
@@ -215,7 +248,7 @@ class FallingPiece {
     });
   }
 
-  private doForEachSquare(fn: (boardPosition: Vector) => void) {
+  public doForEachSquare(fn: (boardPosition: Vector) => void) {
     for (let y = 0; y < this.size.h; y += 1) {
       for (let x = 0; x < this.size.w; x += 1) {
         if (this.grid[y * this.size.w + x] === "X") {
@@ -266,13 +299,7 @@ class FallingPiece {
     let isColliding = false;
     // add two rows to the top of the board rect for rotations
     this.doForEachSquare((pos) => {
-      isColliding =
-        isColliding ||
-        !getIsPositionInRect(pos, {
-          ...BOARD_RECT,
-          y: BOARD_RECT.y - 2,
-          h: BOARD_RECT.h + 2,
-        });
+      isColliding = isColliding || !getIsPositionInRect(pos, BOARD_RECT);
     });
     return isColliding;
   }
@@ -286,27 +313,96 @@ class FallingPiece {
     return isColliding;
   }
 
-  private getIsColliding() {
+  public getIsColliding() {
     return this.getIsCollidingBoardEdges() || this.getIsCollidingBoard();
   }
 
-  private moveInDirection() {
-    const oldPosition = this.position;
-    this.position = vectorAdd(this.position, this.direction);
-    if (this.getIsColliding()) {
-      this.position = oldPosition;
+  public copyStateFrom(another: Piece) {
+    this.position = vectorClone(another.position);
+    this.currentRotation = another.currentRotation;
+    this.updateGrid();
+  }
+}
+
+class FallingPiece {
+  private piece: Piece;
+  private ghost: Piece;
+  public onPlaced: Signal<void> = new Signal<void>();
+
+  private msPerCell: number;
+  private stepCounter: number;
+  private hitGround: boolean;
+
+  private direction: Vector;
+  private dasDelayCounter: number;
+  private dasCounter: number;
+
+  private ctx: Tetris;
+
+  private isPushdown: boolean;
+
+  constructor(ctx: Tetris, piece: PieceKey, level: Level) {
+    this.ctx = ctx;
+    this.piece = new Piece(ctx, piece);
+    this.ghost = new Piece(ctx, piece);
+    this.ghost.makeGhost();
+
+    this.msPerCell = level.msPerCell;
+    this.stepCounter = this.msPerCell;
+    this.hitGround = false;
+
+    this.direction = { x: 0, y: 0 };
+    this.dasDelayCounter = DAS_DELAY_LENGTH;
+    this.dasCounter = 0;
+
+    this.isPushdown = false;
+
+    this.updateGhost();
+  }
+
+  public draw() {
+    this.ghost.draw();
+    this.piece.draw();
+  }
+
+  public rotateRight() {
+    this.piece.rotateRight();
+    this.ghost.copyStateFrom(this.piece);
+    this.updateGhost();
+  }
+
+  public rotateLeft() {
+    this.piece.rotateLeft();
+    this.ghost.copyStateFrom(this.piece);
+    this.updateGhost();
+  }
+
+  private updateGhost() {
+    this.ghost.position = vectorClone(this.piece.position);
+    let hasMovedDown = false;
+    while (!this.ghost.getIsColliding()) {
+      this.ghost.position = vectorAdd(this.ghost.position, { x: 0, y: 1 });
+      hasMovedDown = true;
+    }
+    if (hasMovedDown) {
+      this.ghost.position = vectorAdd(this.ghost.position, { x: 0, y: -1 });
     }
   }
 
-  public moveDown() {
-    this.position.y += 1;
+  private moveInDirection() {
+    const oldPosition = this.piece.position;
+    this.piece.position = vectorAdd(this.piece.position, this.direction);
+    if (this.piece.getIsColliding()) {
+      this.piece.position = oldPosition;
+    }
+    this.updateGhost();
   }
 
   public step() {
-    this.position.y += 1;
-    if (this.getIsColliding()) {
-      // hit ground
-      this.position.y -= 1;
+    this.piece.position.y += 1;
+    if (this.piece.getIsColliding()) {
+      this.hitGround = true;
+      this.piece.position.y -= 1;
       this.fillIn();
       this.onPlaced.emit();
     }
@@ -314,15 +410,22 @@ class FallingPiece {
 
   private fillIn() {
     const board = this.ctx.getBoard();
-    this.doForEachSquare((pos) => {
-      board.fillCell(pos, this.descriptor.color);
+    this.piece.doForEachSquare((pos) => {
+      board.fillCell(pos, this.piece.getDescriptor().color);
     });
+  }
+
+  public setPushdown(isPushdown: boolean) {
+    if (this.isPushdown !== isPushdown) {
+      this.isPushdown = isPushdown;
+      this.stepCounter = this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
+    }
   }
 
   public update(dt: number) {
     this.stepCounter -= dt;
     while (this.stepCounter < 0) {
-      this.stepCounter += this.msPerCell;
+      this.stepCounter += this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
       this.step();
     }
 
@@ -361,6 +464,12 @@ class FallingPiece {
       }
     }
   }
+
+  public hardDrop() {
+    while (!this.hitGround) {
+      this.step();
+    }
+  }
 }
 
 class Board {
@@ -371,7 +480,10 @@ class Board {
     for (let i = 0; i < NUM_CELLS; i += 1) {
       this.board[i] = {
         filled: false,
-        color: CGA_PALETTE_DICT[CgaColors.LightGray],
+        color: {
+          bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+          fgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+        },
       };
     }
   }
@@ -386,7 +498,7 @@ class Board {
     return this.board[idx];
   }
 
-  public fillCell(pos: Vector, color: string): void {
+  public fillCell(pos: Vector, color: PieceColor): void {
     this.board[this.getBoardIndexFromBoardPosition(pos)].filled = true;
     this.board[this.getBoardIndexFromBoardPosition(pos)].color = color;
   }
@@ -398,8 +510,10 @@ export class Tetris implements Executable {
   private boardScreenRect: Rect;
   private fallingPiece: FallingPiece | null = null;
 
-  private bag: Array<Piece>;
+  private bag: Array<PieceKey>;
   private bagIndex: number;
+
+  private areCounter: number;
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -411,9 +525,7 @@ export class Tetris implements Executable {
     const screenSize = screen.getSizeInCharacters();
 
     this.boardScreenRect = {
-      x: Math.floor(
-        (screenSize.w - WIDTH * CELL_WIDTH - 2 * BORDER_SIZE_H) / 2
-      ),
+      x: Math.round((screenSize.w - WIDTH * CELL_WIDTH - BORDER_SIZE_H) / 2),
       y: screenSize.h - HEIGHT * CELL_HEIGHT - 1 * BORDER_SIZE_V,
       w: WIDTH * CELL_WIDTH,
       h: HEIGHT * CELL_HEIGHT,
@@ -422,6 +534,8 @@ export class Tetris implements Executable {
     this.bag = [...sevenBag];
     this.bagIndex = 0;
     this.shuffleBag();
+
+    this.areCounter = ARE_DELAY;
   }
 
   private init() {
@@ -441,22 +555,27 @@ export class Tetris implements Executable {
   private getScreenPositionFromBoardPosition(
     boardPosition: Vector
   ): Vector | null {
+    const { screen } = this.pc;
     if (!getIsPositionInRect(boardPosition, BOARD_RECT)) return null;
 
-    return {
+    const screenPos = {
       x: this.boardScreenRect.x + boardPosition.x * CELL_WIDTH,
       y: this.boardScreenRect.y + boardPosition.y * CELL_HEIGHT,
     };
+
+    if (!getIsPositionInRect(screenPos, screen.getCharacterRect())) return null;
+
+    return screenPos;
   }
 
-  public drawSquare(boardPosition: Vector, color: string) {
+  public drawSquare(boardPosition: Vector, color: PieceColor) {
     const { screen } = this.pc;
     const screenPos = this.getScreenPositionFromBoardPosition(boardPosition);
     if (screenPos) {
       screen.setCurrentAttributes({
         ...screen.getCurrentAttributes(),
-        bgColor: color,
-        fgColor: CGA_PALETTE_DICT[CgaColors.Black],
+        bgColor: color.bgColor,
+        fgColor: color.fgColor,
       });
       screen.displayString(screenPos, "[]");
     }
@@ -470,15 +589,25 @@ export class Tetris implements Executable {
       bgColor: CGA_PALETTE_DICT[CgaColors.Black],
     });
     for (
-      let y = this.boardScreenRect.y;
+      let y = this.boardScreenRect.y + TOP_PADDING - 2;
+      y < this.boardScreenRect.y + TOP_PADDING;
+      y += 1
+    ) {
+      screen.displayString(
+        { x: this.boardScreenRect.x - BORDER_SIZE_H, y },
+        "\x1Bsf08\x1Bsb00  " + "  ".repeat(WIDTH) + "  "
+      );
+    }
+    for (
+      let y = this.boardScreenRect.y + TOP_PADDING;
       y < this.boardScreenRect.y + HEIGHT * CELL_HEIGHT;
       y += 1
     ) {
       screen.displayString(
         { x: this.boardScreenRect.x - BORDER_SIZE_H, y },
-        "\x1Bsb07\x1Bsf00<!\x1Bsf08\x1Bsb00" +
+        "\x1Bsb07\x1Bsf08<!\x1Bsf08\x1Bsb00" +
           " .".repeat(WIDTH) +
-          "\x1Bsb07\x1Bsf00!>"
+          "\x1Bsb07\x1Bsf08!>"
       );
     }
     screen.displayString(
@@ -486,7 +615,7 @@ export class Tetris implements Executable {
         x: this.boardScreenRect.x - BORDER_SIZE_H,
         y: this.boardScreenRect.y + HEIGHT * CELL_HEIGHT,
       },
-      "\x1Bsb07\x1Bsf00<!" + "=".repeat(WIDTH * CELL_WIDTH) + "!>"
+      "\x1Bsb07\x1Bsf08<!" + "=".repeat(WIDTH * CELL_WIDTH) + "!>"
     );
   }
 
@@ -519,7 +648,8 @@ export class Tetris implements Executable {
       levels[7]
     );
     this.fallingPiece.onPlaced.listen(() => {
-      this.spawnPiece();
+      this.areCounter = ARE_DELAY;
+      this.fallingPiece = null;
     });
     this.bagIndex += 1;
     if (this.bagIndex === this.bag.length) {
@@ -533,7 +663,6 @@ export class Tetris implements Executable {
       screen.hideCursor();
 
       this.init();
-      this.spawnPiece();
 
       let lastTime = performance.now();
       const doAnimationFrame: FrameRequestCallback = async () => {
@@ -546,13 +675,24 @@ export class Tetris implements Executable {
         if (beenPressed.has("ArrowUp")) {
           this.fallingPiece?.rotateRight();
         }
+        if (beenPressed.has("KeyZ")) {
+          this.fallingPiece?.rotateLeft();
+        }
+        if (beenPressed.has("KeyX")) {
+          this.fallingPiece?.rotateRight();
+        }
+        if (beenPressed.has("Space")) {
+          this.fallingPiece?.hardDrop();
+        }
         if (beenPressed.has("Enter")) {
           resolve();
+          return;
         }
         if (this.fallingPiece) {
-          if (beenPressed.has("ArrowLeft")) {
+          this.fallingPiece.setPushdown(keyboard.getIsKeyPressed("ArrowDown"));
+          if (keyboard.getIsKeyPressed("ArrowLeft")) {
             this.fallingPiece.setDirection({ x: -1, y: 0 });
-          } else if (beenPressed.has("ArrowRight")) {
+          } else if (keyboard.getIsKeyPressed("ArrowRight")) {
             this.fallingPiece.setDirection({ x: 1, y: 0 });
           } else if (
             !keyboard.getIsKeyPressed("ArrowLeft") &&
@@ -565,7 +705,14 @@ export class Tetris implements Executable {
 
         // logic
 
-        this.fallingPiece?.update(dt);
+        if (this.fallingPiece) {
+          this.fallingPiece.update(dt);
+        } else {
+          this.areCounter -= dt;
+          if (this.areCounter <= 0) {
+            this.spawnPiece();
+          }
+        }
 
         // rendering
 
