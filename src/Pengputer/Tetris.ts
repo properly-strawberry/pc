@@ -374,6 +374,13 @@ interface Cell {
   color: PieceColor;
 }
 
+const cellClone = (a: Cell): Cell => {
+  return {
+    filled: a.filled,
+    color: a.color,
+  };
+};
+
 class Piece {
   private descriptor: PieceDescriptor;
   private size: Size;
@@ -722,14 +729,18 @@ class Board {
   constructor() {
     this.board = new Array(NUM_CELLS);
     for (let i = 0; i < NUM_CELLS; i += 1) {
-      this.board[i] = {
-        filled: false,
-        color: {
-          bgColor: CGA_PALETTE_DICT[CgaColors.Black],
-          fgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
-        },
-      };
+      this.board[i] = this.getEmptyCell();
     }
+  }
+
+  private getEmptyCell(): Cell {
+    return {
+      filled: false,
+      color: {
+        bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+        fgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+      },
+    };
   }
 
   private getBoardIndexFromBoardPosition(boardPosition: Vector): number {
@@ -745,6 +756,38 @@ class Board {
   public fillCell(pos: Vector, color: PieceColor): void {
     this.board[this.getBoardIndexFromBoardPosition(pos)].filled = true;
     this.board[this.getBoardIndexFromBoardPosition(pos)].color = color;
+  }
+
+  public clearLines() {
+    let y = HEIGHT - 1;
+    while (y > 0) {
+      let isRowComplete = true;
+      for (let x = 0; x < WIDTH; x += 1) {
+        if (!this.board[this.getBoardIndexFromBoardPosition({ x, y })].filled) {
+          isRowComplete = false;
+        }
+      }
+
+      if (isRowComplete) {
+        for (let y2 = y; y2 > 0; y2 -= 1) {
+          for (let x = 0; x < WIDTH; x += 1) {
+            this.board[this.getBoardIndexFromBoardPosition({ x, y: y2 })] =
+              cellClone(
+                this.board[
+                  this.getBoardIndexFromBoardPosition({ x, y: y2 - 1 })
+                ]
+              );
+          }
+        }
+
+        for (let x = 0; x < WIDTH; x += 1) {
+          this.board[this.getBoardIndexFromBoardPosition({ x, y: 0 })] =
+            this.getEmptyCell();
+        }
+      } else {
+        y -= 1;
+      }
+    }
   }
 }
 
@@ -956,6 +999,7 @@ export class Tetris implements Executable {
     this.fallingPiece.onPlaced.listen(() => {
       this.areCounter = ARE_DELAY;
       this.fallingPiece = null;
+      this.board.clearLines();
     });
     this.bagIndex += 1;
     if (this.bagIndex === this.bag.length) {
