@@ -418,7 +418,7 @@ class FallingPiece {
   public setPushdown(isPushdown: boolean) {
     if (this.isPushdown !== isPushdown) {
       this.isPushdown = isPushdown;
-      this.stepCounter = this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
+      this.stepCounter = this.isPushdown ? 0 : this.msPerCell;
     }
   }
 
