@@ -16,4 +16,8 @@ export const vectorClone = (a: Vector): Vector => {
   return { x: a.x, y: a.y };
 };
 
+export const vectorMultiplyComponents = (a: Vector, b: Vector): Vector => {
+  return { x: a.x * b.x, y: a.y * b.y };
+};
+
 export const zeroVector = { x: 0, y: 0 };

@@ -4,6 +4,7 @@ Sources:
 - https://tetris.wiki/Tetris_(NES)
 - https://tetris.fandom.com/wiki/Nintendo_Rotation_System
 - https://tetris.wiki/Tetris_Guideline
+- https://tetris.wiki/Super_Rotation_System
 */
 
 import _ from "lodash";
@@ -17,10 +18,12 @@ import {
   vectorAdd,
   vectorClone,
   vectorEqual,
+  vectorMultiplyComponents,
   zeroVector,
 } from "../Toolbox/Vector";
 import { CgaColors } from "../Color/types";
 import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
+import { wrapMax } from "../Toolbox/Math";
 
 const msPerFrame = 16.666666666;
 
@@ -100,6 +103,7 @@ const DAS_DELAY_LENGTH = 10 * msPerFrame;
 const DAS_LENGTH = 2 * msPerFrame;
 const ARE_DELAY = 6 * msPerFrame;
 const PUSHDOWN_LENGTH = 1 * msPerFrame;
+const LOCK_DELAY = 30 * msPerFrame;
 
 enum PieceKey {
   I = "I",
@@ -127,14 +131,162 @@ interface PieceColor {
 }
 
 interface PieceDescriptor {
+  key: PieceKey;
   size: Size;
   rotations: Array<string>;
   spawnPosition: Vector;
+  nextOffset: Vector;
   color: PieceColor;
 }
 
+enum Rotation {
+  Zero = 0,
+  Right = 1,
+  Two = 2,
+  Left = 3,
+}
+const NUM_ROTATIONS = 4;
+
+const wallKickRegular: Record<
+  Rotation,
+  Partial<Record<Rotation, Array<Vector>>>
+> = {
+  [Rotation.Zero]: {
+    [Rotation.Right]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: -1, y: -1 },
+      { x: 0, y: +2 },
+      { x: -1, y: +2 },
+    ],
+    [Rotation.Left]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: +1, y: -1 },
+      { x: 0, y: +2 },
+      { x: +1, y: +2 },
+    ],
+  },
+  [Rotation.Right]: {
+    [Rotation.Zero]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: +1, y: +1 },
+      { x: 0, y: -2 },
+      { x: +1, y: -2 },
+    ],
+    [Rotation.Two]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: +1, y: +1 },
+      { x: 0, y: -2 },
+      { x: +1, y: -2 },
+    ],
+  },
+  [Rotation.Two]: {
+    [Rotation.Right]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: -1, y: -1 },
+      { x: 0, y: +2 },
+      { x: -1, y: +2 },
+    ],
+    [Rotation.Left]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: +1, y: -1 },
+      { x: 0, y: +2 },
+      { x: +1, y: +2 },
+    ],
+  },
+  [Rotation.Left]: {
+    [Rotation.Two]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: -1, y: +1 },
+      { x: 0, y: -2 },
+      { x: -1, y: -2 },
+    ],
+    [Rotation.Zero]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: -1, y: +1 },
+      { x: 0, y: -2 },
+      { x: -1, y: -2 },
+    ],
+  },
+};
+
+const wallKickI: Record<Rotation, Partial<Record<Rotation, Array<Vector>>>> = {
+  [Rotation.Zero]: {
+    [Rotation.Right]: [
+      { x: 0, y: 0 },
+      { x: -2, y: 0 },
+      { x: +1, y: 0 },
+      { x: -2, y: +1 },
+      { x: +1, y: -2 },
+    ],
+    [Rotation.Left]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: +2, y: 0 },
+      { x: -1, y: -2 },
+      { x: +2, y: +1 },
+    ],
+  },
+  [Rotation.Right]: {
+    [Rotation.Zero]: [
+      { x: 0, y: 0 },
+      { x: +2, y: 0 },
+      { x: -1, y: 0 },
+      { x: +2, y: -1 },
+      { x: -1, y: +2 },
+    ],
+    [Rotation.Two]: [
+      { x: 0, y: 0 },
+      { x: -1, y: 0 },
+      { x: +2, y: 0 },
+      { x: -1, y: -2 },
+      { x: +2, y: +1 },
+    ],
+  },
+  [Rotation.Two]: {
+    [Rotation.Right]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: -2, y: 0 },
+      { x: +1, y: +2 },
+      { x: -2, y: -1 },
+    ],
+    [Rotation.Left]: [
+      { x: 0, y: 0 },
+      { x: +2, y: 0 },
+      { x: -1, y: 0 },
+      { x: +2, y: -1 },
+      { x: -1, y: +2 },
+    ],
+  },
+  [Rotation.Left]: {
+    [Rotation.Two]: [
+      { x: 0, y: 0 },
+      { x: -2, y: 0 },
+      { x: +1, y: 0 },
+      { x: -2, y: +1 },
+      { x: +1, y: -2 },
+    ],
+    [Rotation.Zero]: [
+      { x: 0, y: 0 },
+      { x: +1, y: 0 },
+      { x: -2, y: 0 },
+      { x: +1, y: +2 },
+      { x: -2, y: -1 },
+    ],
+  },
+};
+
 const pieceDescriptors: Record<PieceKey, PieceDescriptor> = {
   [PieceKey.I]: {
+    key: PieceKey.I,
     size: { w: 4, h: 4 },
     rotations: [
       "    XXXX        ",
@@ -143,60 +295,73 @@ const pieceDescriptors: Record<PieceKey, PieceDescriptor> = {
       " X   X   X   X  ",
     ],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 0 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Cyan],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightCyan],
     },
   },
   [PieceKey.O]: {
+    key: PieceKey.O,
     size: { w: 2, h: 2 },
     rotations: ["XXXX"],
     spawnPosition: { x: 4, y: -1 + TOP_PADDING },
+    nextOffset: { x: 1, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Yellow],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightYellow],
     },
   },
   [PieceKey.J]: {
+    key: PieceKey.J,
     size: { w: 3, h: 3 },
     rotations: ["X  XXX   ", " XX X  X ", "   XXX  X", " X  X XX "],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Blue],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightBlue],
     },
   },
   [PieceKey.L]: {
+    key: PieceKey.L,
     size: { w: 3, h: 3 },
     rotations: ["  XXXX   ", " X  X  XX", "   XXXX  ", "XX  X  X "],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Orange],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightOrange],
     },
   },
   [PieceKey.S]: {
+    key: PieceKey.S,
     size: { w: 3, h: 3 },
     rotations: [" XXXX    ", " X  XX  X", "    XXXX ", "X  XX  X "],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Green],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightGreen],
     },
   },
   [PieceKey.T]: {
+    key: PieceKey.T,
     size: { w: 3, h: 3 },
     rotations: [" X XXX   ", " X  XX X ", "   XXX X ", " X XX  X "],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Violet],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightViolet],
     },
   },
   [PieceKey.Z]: {
+    key: PieceKey.Z,
     size: { w: 3, h: 3 },
     rotations: ["XX  XX   ", "  X XX X ", "   XX  XX", " X XX X  "],
     spawnPosition: { x: 3, y: -1 + TOP_PADDING },
+    nextOffset: { x: 0, y: 1 },
     color: {
       fgColor: CGA_PALETTE_DICT[CgaColors.Red],
       bgColor: CGA_PALETTE_DICT[CgaColors.LightRed],
@@ -213,7 +378,7 @@ class Piece {
   private descriptor: PieceDescriptor;
   private size: Size;
   public position: Vector;
-  private currentRotation: number;
+  private currentRotation: Rotation;
   private grid: string;
 
   private ctx: Tetris;
@@ -244,18 +409,26 @@ class Piece {
 
   public draw() {
     this.doForEachSquare((boardPosition) => {
-      this.ctx.drawSquare(boardPosition, this.descriptor.color);
+      this.ctx.drawBoardSquare(boardPosition, this.descriptor.color);
     });
   }
 
-  public doForEachSquare(fn: (boardPosition: Vector) => void) {
+  public doForEachSquare(
+    fn: (boardPosition: Vector, localSquarePosition: Vector) => void
+  ) {
     for (let y = 0; y < this.size.h; y += 1) {
       for (let x = 0; x < this.size.w; x += 1) {
         if (this.grid[y * this.size.w + x] === "X") {
-          fn({
-            x: this.position.x + x,
-            y: this.position.y + y,
-          });
+          fn(
+            {
+              x: this.position.x + x,
+              y: this.position.y + y,
+            },
+            {
+              x,
+              y,
+            }
+          );
         }
       }
     }
@@ -266,33 +439,68 @@ class Piece {
   }
 
   private _rotateRight() {
-    this.currentRotation += 1;
-    while (this.currentRotation >= this.descriptor.rotations.length) {
-      this.currentRotation -= this.descriptor.rotations.length;
-    }
+    this.currentRotation = wrapMax(
+      this.currentRotation + 1,
+      this.descriptor.rotations.length
+    );
     this.updateGrid();
   }
 
-  public rotateRight() {
-    this._rotateRight();
-    if (this.getIsColliding()) {
-      this._rotateLeft();
+  private getKickSet() {
+    switch (this.descriptor.key) {
+      case PieceKey.J:
+      case PieceKey.L:
+      case PieceKey.S:
+      case PieceKey.T:
+      case PieceKey.Z:
+        return wallKickRegular;
+      case PieceKey.I:
+        return wallKickI;
+      case PieceKey.O:
+        return null;
     }
   }
 
-  private _rotateLeft() {
-    this.currentRotation -= 1;
-    while (this.currentRotation < 0) {
-      this.currentRotation += this.descriptor.rotations.length;
+  public rotateRight() {
+    const originalPosition = vectorClone(this.position);
+    const startRotation = this.currentRotation;
+    this._rotateRight();
+    const nextRotation = this.currentRotation;
+    const kickSet = this.getKickSet()?.[startRotation][nextRotation];
+    if (!kickSet) return;
+    for (const kick of kickSet) {
+      this.position = vectorAdd(originalPosition, kick);
+      if (!this.getIsColliding()) {
+        return;
+      }
     }
+    this.position = originalPosition;
+    this._rotateLeft();
+  }
+
+  private _rotateLeft() {
+    this.currentRotation = wrapMax(
+      this.currentRotation - 1,
+      this.descriptor.rotations.length
+    );
     this.updateGrid();
   }
 
   public rotateLeft() {
+    const originalPosition = vectorClone(this.position);
+    const startRotation = this.currentRotation;
     this._rotateLeft();
-    if (this.getIsColliding()) {
-      this._rotateRight();
+    const nextRotation = this.currentRotation;
+    const kickSet = this.getKickSet()?.[startRotation][nextRotation];
+    if (!kickSet) return;
+    for (const kick of kickSet) {
+      this.position = vectorAdd(originalPosition, kick);
+      if (!this.getIsColliding()) {
+        return;
+      }
     }
+    this.position = originalPosition;
+    this._rotateRight();
   }
 
   private getIsCollidingBoardEdges() {
@@ -331,11 +539,13 @@ class FallingPiece {
 
   private msPerCell: number;
   private stepCounter: number;
-  private hitGround: boolean;
 
   private direction: Vector;
   private dasDelayCounter: number;
   private dasCounter: number;
+
+  private lockDelayCounter: number;
+  private lockResetsLeft: number;
 
   private ctx: Tetris;
 
@@ -349,13 +559,15 @@ class FallingPiece {
 
     this.msPerCell = level.msPerCell;
     this.stepCounter = this.msPerCell;
-    this.hitGround = false;
 
     this.direction = { x: 0, y: 0 };
     this.dasDelayCounter = DAS_DELAY_LENGTH;
     this.dasCounter = 0;
 
     this.isPushdown = false;
+
+    this.lockDelayCounter = LOCK_DELAY;
+    this.lockResetsLeft = 15;
 
     this.updateGhost();
   }
@@ -366,12 +578,14 @@ class FallingPiece {
   }
 
   public rotateRight() {
+    this.resetLocking();
     this.piece.rotateRight();
     this.ghost.copyStateFrom(this.piece);
     this.updateGhost();
   }
 
   public rotateLeft() {
+    this.resetLocking();
     this.piece.rotateLeft();
     this.ghost.copyStateFrom(this.piece);
     this.updateGhost();
@@ -390,22 +604,37 @@ class FallingPiece {
   }
 
   private moveInDirection() {
-    const oldPosition = this.piece.position;
-    this.piece.position = vectorAdd(this.piece.position, this.direction);
-    if (this.piece.getIsColliding()) {
-      this.piece.position = oldPosition;
+    if (this.getIsMoving()) {
+      const oldPosition = this.piece.position;
+      this.piece.position = vectorAdd(this.piece.position, this.direction);
+      if (this.piece.getIsColliding()) {
+        this.piece.position = oldPosition;
+      } else {
+        this.updateGhost();
+        this.resetLocking();
+      }
     }
-    this.updateGhost();
+  }
+
+  private getIsResting() {
+    let resting = false;
+    this.piece.position.y += 1;
+    if (this.piece.getIsColliding()) {
+      resting = true;
+    }
+    this.piece.position.y -= 1;
+    return resting;
   }
 
   public step() {
-    this.piece.position.y += 1;
-    if (this.piece.getIsColliding()) {
-      this.hitGround = true;
-      this.piece.position.y -= 1;
-      this.fillIn();
-      this.onPlaced.emit();
+    if (!this.getIsResting()) {
+      this.piece.position.y += 1;
     }
+  }
+
+  private lock() {
+    this.fillIn();
+    this.onPlaced.emit();
   }
 
   private fillIn() {
@@ -427,6 +656,13 @@ class FallingPiece {
     while (this.stepCounter < 0) {
       this.stepCounter += this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
       this.step();
+    }
+
+    if (this.getIsResting()) {
+      this.lockDelayCounter -= dt;
+      if (this.lockDelayCounter <= 0) {
+        this.lock();
+      }
     }
 
     let moveDt = dt;
@@ -465,10 +701,18 @@ class FallingPiece {
     }
   }
 
-  public hardDrop() {
-    while (!this.hitGround) {
-      this.step();
+  private resetLocking() {
+    if (this.lockResetsLeft > 0) {
+      this.lockResetsLeft -= 1;
+      this.lockDelayCounter = LOCK_DELAY;
     }
+  }
+
+  public hardDrop() {
+    while (!this.getIsResting()) {
+      this.piece.position.y += 1;
+    }
+    this.lock();
   }
 }
 
@@ -506,9 +750,12 @@ class Board {
 
 export class Tetris implements Executable {
   private pc: PC;
+
   private board: Board;
   private boardScreenRect: Rect;
+
   private fallingPiece: FallingPiece | null = null;
+  private nextOrigin: Vector = { x: 63, y: 12 };
 
   private bag: Array<PieceKey>;
   private bagIndex: number;
@@ -568,16 +815,25 @@ export class Tetris implements Executable {
     return screenPos;
   }
 
-  public drawSquare(boardPosition: Vector, color: PieceColor) {
+  private drawSquare(
+    screenPos: Vector,
+    color: PieceColor,
+    string: string = "[]"
+  ) {
     const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: color.bgColor,
+      fgColor: color.fgColor,
+    });
+    screen.displayString(screenPos, string);
+  }
+
+  public drawBoardSquare(boardPosition: Vector, color: PieceColor) {
     const screenPos = this.getScreenPositionFromBoardPosition(boardPosition);
     if (screenPos) {
-      screen.setCurrentAttributes({
-        ...screen.getCurrentAttributes(),
-        bgColor: color.bgColor,
-        fgColor: color.fgColor,
-      });
-      screen.displayString(screenPos, "[]");
+      this.drawSquare(screenPos, color);
     }
   }
 
@@ -625,7 +881,7 @@ export class Tetris implements Executable {
         const boardPos = { x, y };
         const cell = this.board.getCell(boardPos);
         if (cell && cell.filled) {
-          this.drawSquare(boardPos, cell.color);
+          this.drawBoardSquare(boardPos, cell.color);
         }
       }
     }
@@ -639,6 +895,56 @@ export class Tetris implements Executable {
 
   public getBoard() {
     return this.board;
+  }
+
+  private drawNext() {
+    const { screen } = this.pc;
+
+    const piece = new Piece(this, this.bag[this.bagIndex]);
+    const color = piece.getDescriptor().color;
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString(this.nextOrigin, "= NEXT =");
+
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < 4; x += 1) {
+        this.drawSquare(
+          vectorAdd(
+            vectorMultiplyComponents(
+              { x, y },
+              {
+                x: CELL_WIDTH,
+                y: CELL_HEIGHT,
+              }
+            ),
+            vectorAdd(this.nextOrigin, { x: 0, y: 1 })
+          ),
+          {
+            bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+            fgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+          },
+          " ."
+        );
+      }
+    }
+    piece.doForEachSquare((boardPosition, localSquarePosition) => {
+      this.drawSquare(
+        vectorAdd(
+          vectorMultiplyComponents(
+            vectorAdd(localSquarePosition, piece.getDescriptor().nextOffset),
+            {
+              x: CELL_WIDTH,
+              y: CELL_HEIGHT,
+            }
+          ),
+          vectorAdd(this.nextOrigin, { x: 0, y: 1 })
+        ),
+        color
+      );
+    });
   }
 
   private spawnPiece() {
@@ -718,6 +1024,7 @@ export class Tetris implements Executable {
 
         this.drawBoard();
         this.fallingPiece?.draw();
+        this.drawNext();
 
         requestAnimationFrame(doAnimationFrame);
       };
