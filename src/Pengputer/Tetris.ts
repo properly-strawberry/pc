@@ -721,6 +721,10 @@ class FallingPiece {
     }
     this.lock();
   }
+
+  public getPiece() {
+    return this.piece;
+  }
 }
 
 class Board {
@@ -759,6 +763,8 @@ class Board {
   }
 
   public clearLines() {
+    let linesCleared = 0;
+
     let y = HEIGHT - 1;
     while (y > 0) {
       let isRowComplete = true;
@@ -769,6 +775,7 @@ class Board {
       }
 
       if (isRowComplete) {
+        linesCleared += 1;
         for (let y2 = y; y2 > 0; y2 -= 1) {
           for (let x = 0; x < WIDTH; x += 1) {
             this.board[this.getBoardIndexFromBoardPosition({ x, y: y2 })] =
@@ -788,6 +795,8 @@ class Board {
         y -= 1;
       }
     }
+
+    return linesCleared;
   }
 }
 
@@ -798,12 +807,18 @@ export class Tetris implements Executable {
   private boardScreenRect: Rect;
 
   private fallingPiece: FallingPiece | null = null;
-  private nextOrigin: Vector = { x: 63, y: 12 };
+  private nextOrigin: Vector = { x: 53, y: 4 };
+  private holdOrigin: Vector = { x: 17, y: 4 };
+  private heldPiece: PieceKey | null = null;
+  private hasHeld: boolean = false;
 
   private bag: Array<PieceKey>;
   private bagIndex: number;
 
   private areCounter: number;
+
+  private currentLevel: number;
+  private linesCleared: number;
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -826,6 +841,9 @@ export class Tetris implements Executable {
     this.shuffleBag();
 
     this.areCounter = ARE_DELAY;
+
+    this.currentLevel = 0;
+    this.linesCleared = 0;
   }
 
   private init() {
@@ -931,7 +949,6 @@ export class Tetris implements Executable {
   }
 
   private drawBoard() {
-    const { screen } = this.pc;
     this.drawBorder();
     this.drawBoardPieces();
   }
@@ -940,18 +957,7 @@ export class Tetris implements Executable {
     return this.board;
   }
 
-  private drawNext() {
-    const { screen } = this.pc;
-
-    const piece = new Piece(this, this.bag[this.bagIndex]);
-    const color = piece.getDescriptor().color;
-    screen.setCurrentAttributes({
-      ...screen.getCurrentAttributes(),
-      bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
-      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
-    });
-    screen.displayString(this.nextOrigin, "= NEXT =");
-
+  private drawStaticPiece(key: PieceKey | null, pos: Vector) {
     for (let y = 0; y < 4; y += 1) {
       for (let x = 0; x < 4; x += 1) {
         this.drawSquare(
@@ -963,7 +969,7 @@ export class Tetris implements Executable {
                 y: CELL_HEIGHT,
               }
             ),
-            vectorAdd(this.nextOrigin, { x: 0, y: 1 })
+            pos
           ),
           {
             bgColor: CGA_PALETTE_DICT[CgaColors.Black],
@@ -973,38 +979,131 @@ export class Tetris implements Executable {
         );
       }
     }
-    piece.doForEachSquare((boardPosition, localSquarePosition) => {
-      this.drawSquare(
-        vectorAdd(
-          vectorMultiplyComponents(
-            vectorAdd(localSquarePosition, piece.getDescriptor().nextOffset),
-            {
-              x: CELL_WIDTH,
-              y: CELL_HEIGHT,
-            }
+    if (key) {
+      const piece = new Piece(this, key);
+      const color = piece.getDescriptor().color;
+      piece.doForEachSquare((boardPosition, localSquarePosition) => {
+        this.drawSquare(
+          vectorAdd(
+            vectorMultiplyComponents(
+              vectorAdd(localSquarePosition, piece.getDescriptor().nextOffset),
+              {
+                x: CELL_WIDTH,
+                y: CELL_HEIGHT,
+              }
+            ),
+            pos
           ),
-          vectorAdd(this.nextOrigin, { x: 0, y: 1 })
-        ),
-        color
-      );
-    });
+          color
+        );
+      });
+    }
   }
 
-  private spawnPiece() {
-    this.fallingPiece = new FallingPiece(
-      this,
+  private drawNext() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString(this.nextOrigin, "= NEXT =");
+
+    this.drawStaticPiece(
       this.bag[this.bagIndex],
-      levels[7]
+      vectorAdd(this.nextOrigin, { x: 0, y: 1 })
     );
+  }
+
+  private drawHeld() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString(this.holdOrigin, "= HOLD =");
+
+    this.drawStaticPiece(
+      this.heldPiece,
+      vectorAdd(this.holdOrigin, { x: 0, y: 1 })
+    );
+  }
+
+  private drawLevel() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString({ x: 16, y: 20 }, "= LEVEL =");
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+      fgColor: CGA_PALETTE_DICT[CgaColors.White],
+    });
+    screen.displayString({ x: 16, y: 21 }, _.pad(String(this.currentLevel), 9));
+  }
+
+  private drawLines() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString({ x: 16, y: 23 }, "= LINES =");
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+      fgColor: CGA_PALETTE_DICT[CgaColors.White],
+    });
+    screen.displayString({ x: 16, y: 24 }, _.pad(String(this.linesCleared), 9));
+  }
+
+  private spawnPiece(key: PieceKey) {
+    this.hasHeld = false;
+    this.fallingPiece = new FallingPiece(this, key, levels[this.currentLevel]);
     this.fallingPiece.onPlaced.listen(() => {
       this.areCounter = ARE_DELAY;
       this.fallingPiece = null;
-      this.board.clearLines();
+      this.setLinesCleared(this.linesCleared + this.board.clearLines());
     });
+  }
+
+  private holdPiece() {
+    if (!this.hasHeld) {
+      let currentFallingPiece =
+        this.fallingPiece?.getPiece().getDescriptor().key ?? null;
+      if (this.heldPiece) {
+        let currentHeldPiece = this.heldPiece;
+        this.heldPiece = currentFallingPiece;
+        this.spawnPiece(currentHeldPiece);
+      } else {
+        this.heldPiece = currentFallingPiece;
+        this.spawnPiece(this.getNextPiece());
+      }
+      this.hasHeld = true;
+    }
+  }
+
+  private getNextPiece(): PieceKey {
+    let result = this.bag[this.bagIndex];
     this.bagIndex += 1;
     if (this.bagIndex === this.bag.length) {
       this.shuffleBag();
     }
+    return result;
+  }
+
+  private setLinesCleared(linesCleared: number) {
+    this.linesCleared = linesCleared;
+    this.currentLevel = Math.floor(linesCleared / 10);
   }
 
   async run(args: string[]) {
@@ -1030,6 +1129,9 @@ export class Tetris implements Executable {
         }
         if (beenPressed.has("KeyX")) {
           this.fallingPiece?.rotateRight();
+        }
+        if (beenPressed.has("KeyC")) {
+          this.holdPiece();
         }
         if (beenPressed.has("Space")) {
           this.fallingPiece?.hardDrop();
@@ -1060,7 +1162,7 @@ export class Tetris implements Executable {
         } else {
           this.areCounter -= dt;
           if (this.areCounter <= 0) {
-            this.spawnPiece();
+            this.spawnPiece(this.getNextPiece());
           }
         }
 
@@ -1069,6 +1171,9 @@ export class Tetris implements Executable {
         this.drawBoard();
         this.fallingPiece?.draw();
         this.drawNext();
+        this.drawHeld();
+        this.drawLevel();
+        this.drawLines();
 
         requestAnimationFrame(doAnimationFrame);
       };
