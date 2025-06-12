@@ -269,7 +269,12 @@ class PengOS {
   }
 
   private commandPrompt(args: string[]) {
-    this.pc.prompt = args[0] ?? "";
+    const { screen } = this.pc;
+    if (args.length === 0) {
+      screen.printString(`${this.pc.prompt}\n`);
+      return;
+    }
+    this.pc.prompt = args[0];
   }
 
   private commandLook() {

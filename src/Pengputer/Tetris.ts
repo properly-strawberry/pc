@@ -1447,10 +1447,13 @@ export class TetrisApp implements Executable {
     this.pc = pc;
   }
 
-  async run(args: string[]) {
-    const { screen, keyboard } = this.pc;
+  private reset() {
     this.isQuitting = false;
     this.currentState = null;
+  }
+
+  async run(args: string[]) {
+    const { screen, keyboard } = this.pc;
 
     keyboard.resetWereKeysPressed();
     this.changeState(GameStateKey.MainMenu);
@@ -1466,9 +1469,9 @@ export class TetrisApp implements Executable {
         this.currentState?.update(dt);
 
         if (this.isQuitting) {
-          resolve();
           screen.clear();
           screen.printString("Thank you for playing!\n");
+          resolve();
           return;
         }
 
