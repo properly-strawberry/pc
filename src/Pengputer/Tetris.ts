@@ -24,6 +24,7 @@ import {
 import { CgaColors } from "../Color/types";
 import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
 import { wrapMax } from "../Toolbox/Math";
+import { padWithRightBias } from "../Toolbox/String";
 
 const msPerFrame = 16.666666666;
 
@@ -557,6 +558,7 @@ class FallingPiece {
   private ctx: Tetris;
 
   private isPushdown: boolean;
+  private pushdownLength: number;
 
   constructor(ctx: Tetris, piece: PieceKey, level: Level) {
     this.ctx = ctx;
@@ -572,11 +574,16 @@ class FallingPiece {
     this.dasCounter = 0;
 
     this.isPushdown = false;
+    this.pushdownLength = 0;
 
     this.lockDelayCounter = LOCK_DELAY;
     this.lockResetsLeft = 15;
 
     this.updateGhost();
+  }
+
+  public getPushdownLength() {
+    return this.pushdownLength;
   }
 
   public draw() {
@@ -585,6 +592,7 @@ class FallingPiece {
   }
 
   public rotateRight() {
+    this.pushdownLength = 0;
     this.resetLocking();
     this.piece.rotateRight();
     this.ghost.copyStateFrom(this.piece);
@@ -592,6 +600,7 @@ class FallingPiece {
   }
 
   public rotateLeft() {
+    this.pushdownLength = 0;
     this.resetLocking();
     this.piece.rotateLeft();
     this.ghost.copyStateFrom(this.piece);
@@ -617,6 +626,7 @@ class FallingPiece {
       if (this.piece.getIsColliding()) {
         this.piece.position = oldPosition;
       } else {
+        this.pushdownLength = 0;
         this.updateGhost();
         this.resetLocking();
       }
@@ -636,6 +646,9 @@ class FallingPiece {
   public step() {
     if (!this.getIsResting()) {
       this.piece.position.y += 1;
+      if (this.isPushdown) {
+        this.pushdownLength += 1;
+      }
     }
   }
 
@@ -652,6 +665,10 @@ class FallingPiece {
   }
 
   public setPushdown(isPushdown: boolean) {
+    if (!isPushdown && !this.getIsResting()) {
+      this.pushdownLength = 0;
+    }
+
     if (this.isPushdown !== isPushdown) {
       this.isPushdown = isPushdown;
       this.stepCounter = this.isPushdown ? 0 : this.msPerCell;
@@ -718,6 +735,7 @@ class FallingPiece {
   public hardDrop() {
     while (!this.getIsResting()) {
       this.piece.position.y += 1;
+      this.pushdownLength += 1;
     }
     this.lock();
   }
@@ -819,6 +837,7 @@ export class Tetris implements Executable {
 
   private currentLevel: number;
   private linesCleared: number;
+  private score: number;
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -844,6 +863,7 @@ export class Tetris implements Executable {
 
     this.currentLevel = 0;
     this.linesCleared = 0;
+    this.score = 0;
   }
 
   private init() {
@@ -1040,13 +1060,16 @@ export class Tetris implements Executable {
       bgColor: CGA_PALETTE_DICT[CgaColors.Black],
       fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
     });
-    screen.displayString({ x: 16, y: 20 }, "= LEVEL =");
+    screen.displayString({ x: 14, y: 20 }, "== LEVEL ==");
     screen.setCurrentAttributes({
       ...screen.getCurrentAttributes(),
       bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
       fgColor: CGA_PALETTE_DICT[CgaColors.White],
     });
-    screen.displayString({ x: 16, y: 21 }, _.pad(String(this.currentLevel), 9));
+    screen.displayString(
+      { x: 14, y: 21 },
+      ` ${_.padStart(String(this.currentLevel), 9)} `
+    );
   }
 
   private drawLines() {
@@ -1057,23 +1080,63 @@ export class Tetris implements Executable {
       bgColor: CGA_PALETTE_DICT[CgaColors.Black],
       fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
     });
-    screen.displayString({ x: 16, y: 23 }, "= LINES =");
+    screen.displayString({ x: 14, y: 23 }, "== LINES ==");
     screen.setCurrentAttributes({
       ...screen.getCurrentAttributes(),
       bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
       fgColor: CGA_PALETTE_DICT[CgaColors.White],
     });
-    screen.displayString({ x: 16, y: 24 }, _.pad(String(this.linesCleared), 9));
+    screen.displayString(
+      { x: 14, y: 24 },
+      ` ${_.padStart(String(this.linesCleared), 9)} `
+    );
+  }
+
+  private drawScore() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+    });
+    screen.displayString({ x: 14, y: 17 }, "== SCORE ==");
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
+      fgColor: CGA_PALETTE_DICT[CgaColors.White],
+    });
+    screen.displayString(
+      { x: 14, y: 18 },
+      ` ${_.padStart(String(this.score), 9)} `
+    );
   }
 
   private spawnPiece(key: PieceKey) {
     this.hasHeld = false;
-    this.fallingPiece = new FallingPiece(this, key, levels[this.currentLevel]);
-    this.fallingPiece.onPlaced.listen(() => {
+    const fallingPiece = new FallingPiece(this, key, levels[this.currentLevel]);
+    this.fallingPiece = fallingPiece;
+    fallingPiece.onPlaced.listen(() => {
       this.areCounter = ARE_DELAY;
       this.fallingPiece = null;
-      this.setLinesCleared(this.linesCleared + this.board.clearLines());
+      const linesCleared = this.board.clearLines();
+      this.setLinesCleared(this.linesCleared + linesCleared);
+      this.score += fallingPiece.getPushdownLength();
+      this.score += this.getScoreForNumberOfLines(linesCleared);
     });
+  }
+
+  private getScoreForNumberOfLines(lines: number) {
+    if (lines === 1) {
+      return 40 * (this.currentLevel + 1);
+    } else if (lines === 2) {
+      return 100 * (this.currentLevel + 1);
+    } else if (lines === 3) {
+      return 300 * (this.currentLevel + 1);
+    } else if (lines === 4) {
+      return 1200 * (this.currentLevel + 1);
+    }
+    return 0;
   }
 
   private holdPiece() {
@@ -1108,6 +1171,7 @@ export class Tetris implements Executable {
 
   async run(args: string[]) {
     return new Promise<void>((resolve) => {
+      let hasQuit = false;
       const { screen, keyboard } = this.pc;
       screen.hideCursor();
 
@@ -1136,7 +1200,7 @@ export class Tetris implements Executable {
         if (beenPressed.has("Space")) {
           this.fallingPiece?.hardDrop();
         }
-        if (beenPressed.has("Enter")) {
+        if (beenPressed.has("Escape")) {
           resolve();
           return;
         }
@@ -1174,6 +1238,7 @@ export class Tetris implements Executable {
         this.drawHeld();
         this.drawLevel();
         this.drawLines();
+        this.drawScore();
 
         requestAnimationFrame(doAnimationFrame);
       };
