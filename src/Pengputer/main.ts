@@ -28,7 +28,7 @@ import macgerPng from "./files/documents/pengers/macger.png";
 import { ImageFile, TextFile, AudioFile, LinkFile } from "./fileTypes";
 import { argparse } from "../Functions/argparse";
 import { PrintArgs } from "./PrintArgs";
-import { Tetris, TetrisApp } from "./Tetris";
+import { TetrisApp } from "./Tetris";
 
 const PATH_SEPARATOR = "/";
 
@@ -120,12 +120,17 @@ class PengOS {
       data: new PrintArgs(this.pc),
     });
 
-    const gamesDir = softwareDir.mkdir("games");
+    const gamesDir = rootDir.mkdir("games");
     gamesDir.addItem({
       type: FileSystemObjectType.Link,
       name: "pongr.exe",
       data: new LinkFile("https://penger.city/pongerslair/"),
       openType: "run",
+    });
+    gamesDir.addItem({
+      type: FileSystemObjectType.Executable,
+      name: "pengtris.exe",
+      data: new TetrisApp(this.pc),
     });
 
     const documentsDir = rootDir.mkdir("documents");
@@ -546,8 +551,6 @@ class PengOS {
   }
 
   async mainLoop() {
-    const tetris = new TetrisApp(this.pc);
-    await tetris.run([]);
     const { screen, keyboard, fileSystem } = this.pc;
 
     let previousEntries: string[] = [];

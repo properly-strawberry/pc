@@ -8,11 +8,9 @@ Sources:
 */
 
 import _ from "lodash";
-import { readKey, readLine, waitFor } from "../Functions";
 import { getIsPositionInRect, Rect, Size } from "../types";
 import { Executable } from "./FileSystem";
 import { PC } from "./PC";
-import { Screen } from "../Screen";
 import {
   Vector,
   vectorAdd,
@@ -24,7 +22,6 @@ import {
 import { CgaColors } from "../Color/types";
 import { CGA_PALETTE_DICT } from "../Color/cgaPalette";
 import { wrapMax } from "../Toolbox/Math";
-import { padWithRightBias } from "../Toolbox/String";
 
 const msPerFrame = 16.666666666;
 
@@ -73,7 +70,7 @@ const levels: Level[] = [
 
 type SignalListener<D> = (data: D) => void;
 
-class Signal<D> {
+class Signal<D = void> {
   private listeners: Array<SignalListener<D>>;
   constructor() {
     this.listeners = [];
@@ -549,7 +546,7 @@ class Piece {
 class FallingPiece {
   private piece: Piece;
   private ghost: Piece;
-  public onPlaced: Signal<void> = new Signal<void>();
+  public onPlaced: Signal = new Signal();
 
   private msPerCell: number;
   private stepCounter: number;
@@ -749,6 +746,10 @@ class FallingPiece {
   public getPiece() {
     return this.piece;
   }
+
+  public getIsColliding() {
+    return this.piece.getIsColliding();
+  }
 }
 
 class Board {
@@ -824,7 +825,7 @@ class Board {
   }
 }
 
-export class Tetris implements GameState {
+class Tetris implements GameState {
   private pc: PC;
 
   private board: Board;
@@ -845,7 +846,9 @@ export class Tetris implements GameState {
   private linesCleared: number;
   private score: number;
 
-  public onEnd: Signal<void> = new Signal<void>();
+  private isGameOver: boolean = false;
+  public onQuit: Signal = new Signal();
+  public onGameOver: Signal = new Signal();
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -1123,6 +1126,9 @@ export class Tetris implements GameState {
       this.score += fallingPiece.getPushdownLength();
       this.score += this.getScoreForNumberOfLines(linesCleared);
     });
+    if (fallingPiece.getIsColliding()) {
+      this.isGameOver = true;
+    }
   }
 
   private getScoreForNumberOfLines(lines: number) {
@@ -1211,7 +1217,7 @@ export class Tetris implements GameState {
       this.fallingPiece?.hardDrop();
     }
     if (beenPressed.has("Escape")) {
-      this.onEnd.emit();
+      this.onQuit.emit();
       return;
     }
     if (this.fallingPiece) {
@@ -1249,21 +1255,26 @@ export class Tetris implements GameState {
     this.drawLevel();
     this.drawLines();
     this.drawScore();
+
+    if (this.isGameOver) {
+      this.onGameOver.emit();
+      return;
+    }
   }
 }
 
 class MainMenu implements GameState {
   private pc: PC;
 
-  public onStartGame: Signal<void>;
-  public onQuit: Signal<void>;
+  public onStartGame: Signal;
+  public onQuit: Signal;
 
   private titleGraphic: [string, string];
 
   constructor(pc: PC) {
     this.pc = pc;
-    this.onStartGame = new Signal<void>();
-    this.onQuit = new Signal<void>();
+    this.onStartGame = new Signal();
+    this.onQuit = new Signal();
 
     this.titleGraphic = [
       "     b     o yy  gg  p  rr ",
@@ -1329,6 +1340,10 @@ class MainMenu implements GameState {
       { x: 0, y: start + 5 },
       _.pad("Press ENTER to begin game", screen.getSizeInCharacters().w)
     );
+    screen.displayString(
+      { x: 0, y: start + 6 },
+      _.pad("Press ESCAPE to quit", screen.getSizeInCharacters().w)
+    );
   }
 
   update(dt: number) {
@@ -1345,42 +1360,84 @@ class MainMenu implements GameState {
   onLeave() {}
 }
 
+class GameOver implements GameState {
+  private pc: PC;
+
+  public onContinue: Signal;
+
+  constructor(pc: PC) {
+    this.pc = pc;
+    this.onContinue = new Signal();
+  }
+
+  onEnter() {
+    const { screen } = this.pc;
+
+    screen.updateCurrentAttributes((currentAttributes) => {
+      currentAttributes.bgColor = CGA_PALETTE_DICT[CgaColors.LightGray];
+      currentAttributes.fgColor = CGA_PALETTE_DICT[CgaColors.Black];
+      return currentAttributes;
+    });
+    screen.displayString({ x: 27, y: 13 }, "  ==   GAME  OVER   ==  ");
+    screen.displayString({ x: 27, y: 14 }, "  ==  Press ESCAPE  ==  ");
+  }
+
+  update() {
+    const { keyboard } = this.pc;
+
+    const wasPressed = keyboard.getWasKeyPressed();
+    if (wasPressed.has("Escape")) {
+      this.onContinue.emit();
+    }
+    keyboard.resetWereKeysPressed();
+  }
+
+  onLeave() {}
+}
+
 enum GameStateKey {
   MainMenu,
   Tetris,
+  GameOver,
 }
 
 export class TetrisApp implements Executable {
   private pc: PC;
-
-  private mainMenu: MainMenu | null = null;
-  private tetris: Tetris | null = null;
 
   private currentState: GameState | null = null;
   private isQuitting: boolean = false;
 
   private changeState(newStateKey: GameStateKey) {
     const { keyboard } = this.pc;
+    keyboard.resetWereKeysPressed();
     this.currentState?.onLeave();
     switch (newStateKey) {
       case GameStateKey.MainMenu:
-        this.mainMenu = new MainMenu(this.pc);
-        this.mainMenu.onStartGame.listen(() => {
+        const mainMenu = new MainMenu(this.pc);
+        mainMenu.onStartGame.listen(() => {
           this.changeState(GameStateKey.Tetris);
         });
-        this.mainMenu.onQuit.listen(() => {
+        mainMenu.onQuit.listen(() => {
           this.isQuitting = true;
-          keyboard.resetWereKeysPressed();
         });
-        this.currentState = this.mainMenu;
+        this.currentState = mainMenu;
         break;
       case GameStateKey.Tetris:
-        this.tetris = new Tetris(this.pc);
-        this.tetris.onEnd.listen(() => {
+        const tetris = new Tetris(this.pc);
+        tetris.onQuit.listen(() => {
           this.changeState(GameStateKey.MainMenu);
-          keyboard.resetWereKeysPressed();
         });
-        this.currentState = this.tetris;
+        tetris.onGameOver.listen(() => {
+          this.changeState(GameStateKey.GameOver);
+        });
+        this.currentState = tetris;
+        break;
+      case GameStateKey.GameOver:
+        const gameOver = new GameOver(this.pc);
+        gameOver.onContinue.listen(() => {
+          this.changeState(GameStateKey.MainMenu);
+        });
+        this.currentState = gameOver;
         break;
     }
     this.currentState?.onEnter();
@@ -1388,13 +1445,17 @@ export class TetrisApp implements Executable {
 
   constructor(pc: PC) {
     this.pc = pc;
-
-    this.changeState(GameStateKey.MainMenu);
   }
 
   async run(args: string[]) {
+    const { screen, keyboard } = this.pc;
+    this.isQuitting = false;
+    this.currentState = null;
+
+    keyboard.resetWereKeysPressed();
+    this.changeState(GameStateKey.MainMenu);
+
     return new Promise<void>((resolve) => {
-      const { screen, keyboard } = this.pc;
       screen.hideCursor();
 
       let lastTime = performance.now();

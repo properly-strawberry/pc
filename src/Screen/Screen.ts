@@ -435,6 +435,18 @@ export class Screen {
     };
   }
 
+  updateCurrentAttributes(
+    updateFn: (
+      currentAttributes: ScreenCharacterAttributes
+    ) => ScreenCharacterAttributes
+  ) {
+    this.setCurrentAttributes(
+      updateFn({
+        ...this.getCurrentAttributes(),
+      })
+    );
+  }
+
   replaceCharacter(char: string) {
     this.replaceCharacterAt(char, this.getCursorPosition());
   }
