@@ -462,6 +462,7 @@ class PengOS {
     const [argsName] = args;
     if (!argsName) {
       screen.printString(`Must provide name\n`);
+      return;
     }
     const strippedNameMatch = argsName.match(/^[^.]+/);
     if (!strippedNameMatch) {
