@@ -28,7 +28,7 @@ import macgerPng from "./files/documents/pengers/macger.png";
 import { ImageFile, TextFile, AudioFile, LinkFile } from "./fileTypes";
 import { argparse } from "../Functions/argparse";
 import { PrintArgs } from "./PrintArgs";
-import { Tetris } from "./Tetris";
+import { Tetris, TetrisApp } from "./Tetris";
 
 const PATH_SEPARATOR = "/";
 
@@ -546,7 +546,7 @@ class PengOS {
   }
 
   async mainLoop() {
-    const tetris = new Tetris(this.pc);
+    const tetris = new TetrisApp(this.pc);
     await tetris.run([]);
     const { screen, keyboard, fileSystem } = this.pc;
 

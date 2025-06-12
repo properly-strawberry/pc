@@ -28,6 +28,12 @@ import { padWithRightBias } from "../Toolbox/String";
 
 const msPerFrame = 16.666666666;
 
+interface GameState {
+  onEnter: () => void;
+  update: (dt: number) => void;
+  onLeave: () => void;
+}
+
 interface Level {
   msPerCell: number;
 }
@@ -818,7 +824,7 @@ class Board {
   }
 }
 
-export class Tetris implements Executable {
+export class Tetris implements GameState {
   private pc: PC;
 
   private board: Board;
@@ -838,6 +844,8 @@ export class Tetris implements Executable {
   private currentLevel: number;
   private linesCleared: number;
   private score: number;
+
+  public onEnd: Signal<void> = new Signal<void>();
 
   constructor(pc: PC) {
     this.pc = pc;
@@ -864,15 +872,6 @@ export class Tetris implements Executable {
     this.currentLevel = 0;
     this.linesCleared = 0;
     this.score = 0;
-  }
-
-  private init() {
-    const { screen } = this.pc;
-    screen.clear();
-    screen.displayString(
-      { x: 0, y: 0 },
-      _.pad("======== P E N G T R I S ========", screen.getSizeInCharacters().w)
-    );
   }
 
   private shuffleBag() {
@@ -1169,76 +1168,248 @@ export class Tetris implements Executable {
     this.currentLevel = Math.floor(linesCleared / 10);
   }
 
+  public onEnter() {
+    const { screen, keyboard } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+    });
+    screen.clear();
+    screen.displayString(
+      { x: 0, y: 0 },
+      _.pad("======== P E N G T R I S ========", screen.getSizeInCharacters().w)
+    );
+
+    keyboard.resetWereKeysPressed();
+  }
+
+  public onLeave() {}
+
+  async update(dt: number) {
+    const { screen, keyboard } = this.pc;
+
+    screen.hideCursor();
+
+    // input
+
+    const beenPressed = keyboard.getWasKeyPressed();
+    if (beenPressed.has("ArrowUp")) {
+      this.fallingPiece?.rotateRight();
+    }
+    if (beenPressed.has("KeyZ")) {
+      this.fallingPiece?.rotateLeft();
+    }
+    if (beenPressed.has("KeyX")) {
+      this.fallingPiece?.rotateRight();
+    }
+    if (beenPressed.has("KeyC")) {
+      this.holdPiece();
+    }
+    if (beenPressed.has("Space")) {
+      this.fallingPiece?.hardDrop();
+    }
+    if (beenPressed.has("Escape")) {
+      this.onEnd.emit();
+      return;
+    }
+    if (this.fallingPiece) {
+      this.fallingPiece.setPushdown(keyboard.getIsKeyPressed("ArrowDown"));
+      if (keyboard.getIsKeyPressed("ArrowLeft")) {
+        this.fallingPiece.setDirection({ x: -1, y: 0 });
+      } else if (keyboard.getIsKeyPressed("ArrowRight")) {
+        this.fallingPiece.setDirection({ x: 1, y: 0 });
+      } else if (
+        !keyboard.getIsKeyPressed("ArrowLeft") &&
+        !keyboard.getIsKeyPressed("ArrowRight")
+      ) {
+        this.fallingPiece.setDirection({ x: 0, y: 0 });
+      }
+    }
+    keyboard.resetWereKeysPressed();
+
+    // logic
+
+    if (this.fallingPiece) {
+      this.fallingPiece.update(dt);
+    } else {
+      this.areCounter -= dt;
+      if (this.areCounter <= 0) {
+        this.spawnPiece(this.getNextPiece());
+      }
+    }
+
+    // rendering
+
+    this.drawBoard();
+    this.fallingPiece?.draw();
+    this.drawNext();
+    this.drawHeld();
+    this.drawLevel();
+    this.drawLines();
+    this.drawScore();
+  }
+}
+
+class MainMenu implements GameState {
+  private pc: PC;
+
+  public onStartGame: Signal<void>;
+  public onQuit: Signal<void>;
+
+  private titleGraphic: [string, string];
+
+  constructor(pc: PC) {
+    this.pc = pc;
+    this.onStartGame = new Signal<void>();
+    this.onQuit = new Signal<void>();
+
+    this.titleGraphic = [
+      "     b     o yy  gg  p  rr ",
+      "cccc bbb ooo yy gg  ppp  rr",
+    ];
+  }
+
+  onEnter() {
+    const { screen } = this.pc;
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+    });
+    screen.clear();
+
+    let start = 9;
+    for (let titleLineIndex = 0; titleLineIndex < 2; titleLineIndex += 1) {
+      screen.setCursorPosition({ x: 12, y: start + titleLineIndex });
+      for (const char of this.titleGraphic[titleLineIndex]) {
+        let string = "";
+        switch (char) {
+          case " ":
+            string = "\x1bsb00  ";
+            break;
+          case "c":
+            string = "\x1bsb0b\x1bsf03[]";
+            break;
+          case "b":
+            string = "\x1bsb09\x1bsf01[]";
+            break;
+          case "o":
+            string = "\x1bsb18\x1bsf10[]";
+            break;
+          case "y":
+            string = "\x1bsb0e\x1bsf06[]";
+            break;
+          case "g":
+            string = "\x1bsb0a\x1bsf02[]";
+            break;
+          case "p":
+            string = "\x1bsb1c\x1bsf14[]";
+            break;
+          case "r":
+            string = "\x1bsb0c\x1bsf04[]";
+            break;
+        }
+        screen.printString(string);
+      }
+    }
+
+    screen.setCurrentAttributes({
+      ...screen.getCurrentAttributes(),
+      fgColor: CGA_PALETTE_DICT[CgaColors.LightGray],
+      bgColor: CGA_PALETTE_DICT[CgaColors.Black],
+    });
+    screen.displayString(
+      { x: 0, y: start + 3 },
+      _.pad("======== P E N G T R I S ========", screen.getSizeInCharacters().w)
+    );
+    screen.displayString(
+      { x: 0, y: start + 5 },
+      _.pad("Press ENTER to begin game", screen.getSizeInCharacters().w)
+    );
+  }
+
+  update(dt: number) {
+    const { keyboard } = this.pc;
+
+    const wasPressed = keyboard.getWasKeyPressed();
+    if (wasPressed.has("Enter")) {
+      this.onStartGame.emit();
+    } else if (wasPressed.has("Escape")) {
+      this.onQuit.emit();
+    }
+  }
+
+  onLeave() {}
+}
+
+enum GameStateKey {
+  MainMenu,
+  Tetris,
+}
+
+export class TetrisApp implements Executable {
+  private pc: PC;
+
+  private mainMenu: MainMenu | null = null;
+  private tetris: Tetris | null = null;
+
+  private currentState: GameState | null = null;
+  private isQuitting: boolean = false;
+
+  private changeState(newStateKey: GameStateKey) {
+    const { keyboard } = this.pc;
+    this.currentState?.onLeave();
+    switch (newStateKey) {
+      case GameStateKey.MainMenu:
+        this.mainMenu = new MainMenu(this.pc);
+        this.mainMenu.onStartGame.listen(() => {
+          this.changeState(GameStateKey.Tetris);
+        });
+        this.mainMenu.onQuit.listen(() => {
+          this.isQuitting = true;
+          keyboard.resetWereKeysPressed();
+        });
+        this.currentState = this.mainMenu;
+        break;
+      case GameStateKey.Tetris:
+        this.tetris = new Tetris(this.pc);
+        this.tetris.onEnd.listen(() => {
+          this.changeState(GameStateKey.MainMenu);
+          keyboard.resetWereKeysPressed();
+        });
+        this.currentState = this.tetris;
+        break;
+    }
+    this.currentState?.onEnter();
+  }
+
+  constructor(pc: PC) {
+    this.pc = pc;
+
+    this.changeState(GameStateKey.MainMenu);
+  }
+
   async run(args: string[]) {
     return new Promise<void>((resolve) => {
-      let hasQuit = false;
       const { screen, keyboard } = this.pc;
       screen.hideCursor();
-
-      this.init();
 
       let lastTime = performance.now();
       const doAnimationFrame: FrameRequestCallback = async () => {
         const dt = performance.now() - lastTime;
         lastTime = performance.now();
 
-        // input
+        this.currentState?.update(dt);
 
-        const beenPressed = keyboard.getWasKeyPressed();
-        if (beenPressed.has("ArrowUp")) {
-          this.fallingPiece?.rotateRight();
-        }
-        if (beenPressed.has("KeyZ")) {
-          this.fallingPiece?.rotateLeft();
-        }
-        if (beenPressed.has("KeyX")) {
-          this.fallingPiece?.rotateRight();
-        }
-        if (beenPressed.has("KeyC")) {
-          this.holdPiece();
-        }
-        if (beenPressed.has("Space")) {
-          this.fallingPiece?.hardDrop();
-        }
-        if (beenPressed.has("Escape")) {
+        if (this.isQuitting) {
           resolve();
+          screen.clear();
+          screen.printString("Thank you for playing!\n");
           return;
         }
-        if (this.fallingPiece) {
-          this.fallingPiece.setPushdown(keyboard.getIsKeyPressed("ArrowDown"));
-          if (keyboard.getIsKeyPressed("ArrowLeft")) {
-            this.fallingPiece.setDirection({ x: -1, y: 0 });
-          } else if (keyboard.getIsKeyPressed("ArrowRight")) {
-            this.fallingPiece.setDirection({ x: 1, y: 0 });
-          } else if (
-            !keyboard.getIsKeyPressed("ArrowLeft") &&
-            !keyboard.getIsKeyPressed("ArrowRight")
-          ) {
-            this.fallingPiece.setDirection({ x: 0, y: 0 });
-          }
-        }
-        keyboard.resetWereKeysPressed();
-
-        // logic
-
-        if (this.fallingPiece) {
-          this.fallingPiece.update(dt);
-        } else {
-          this.areCounter -= dt;
-          if (this.areCounter <= 0) {
-            this.spawnPiece(this.getNextPiece());
-          }
-        }
-
-        // rendering
-
-        this.drawBoard();
-        this.fallingPiece?.draw();
-        this.drawNext();
-        this.drawHeld();
-        this.drawLevel();
-        this.drawLines();
-        this.drawScore();
 
         requestAnimationFrame(doAnimationFrame);
       };
