@@ -79,10 +79,6 @@ const getToken = (argsString: string, index: number): TokenData | null => {
     }
   }
 
-  if (!tokenData) {
-    return null;
-  }
-
   return {
     start: tokenStartIndex,
     end: tokenEndIndex,
