@@ -66,6 +66,16 @@ const levels: Level[] = [
   { msPerCell: 2 * msPerFrame },
   { msPerCell: 2 * msPerFrame },
   { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 1 * msPerFrame },
+  { msPerCell: 0 * msPerFrame },
 ];
 
 type SignalListener<D> = (data: D) => void;
@@ -680,9 +690,15 @@ class FallingPiece {
 
   public update(dt: number) {
     this.stepCounter -= dt;
-    while (this.stepCounter < 0) {
-      this.stepCounter += this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
-      this.step();
+    if (this.msPerCell === 0) {
+      while (!this.getIsResting()) {
+        this.step();
+      }
+    } else {
+      while (this.stepCounter <= 0) {
+        this.stepCounter += this.isPushdown ? PUSHDOWN_LENGTH : this.msPerCell;
+        this.step();
+      }
     }
 
     if (this.getIsResting()) {
@@ -872,7 +888,7 @@ class Tetris implements GameState {
 
     this.areCounter = ARE_DELAY;
 
-    this.currentLevel = 0;
+    this.currentLevel = levels.length - 1;
     this.linesCleared = 0;
     this.score = 0;
   }
@@ -1068,9 +1084,10 @@ class Tetris implements GameState {
       bgColor: CGA_PALETTE_DICT[CgaColors.DarkGray],
       fgColor: CGA_PALETTE_DICT[CgaColors.White],
     });
+    const levelString = this.currentLevel < levels.length - 1 ? String(this.currentLevel) : '* MAX *';
     screen.displayString(
       { x: 14, y: 21 },
-      ` ${_.padStart(String(this.currentLevel), 9)} `
+      ` ${_.padStart(levelString, 9)} `
     );
   }
 
@@ -1171,7 +1188,7 @@ class Tetris implements GameState {
 
   private setLinesCleared(linesCleared: number) {
     this.linesCleared = linesCleared;
-    this.currentLevel = Math.floor(linesCleared / 10);
+    this.currentLevel = Math.max(Math.min(Math.floor(linesCleared / 10), levels.length - 1), this.currentLevel);
   }
 
   public onEnter() {
