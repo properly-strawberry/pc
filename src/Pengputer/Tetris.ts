@@ -888,7 +888,7 @@ class Tetris implements GameState {
 
     this.areCounter = ARE_DELAY;
 
-    this.currentLevel = levels.length - 1;
+    this.currentLevel = 0;
     this.linesCleared = 0;
     this.score = 0;
   }
