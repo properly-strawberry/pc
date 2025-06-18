@@ -132,18 +132,15 @@ export class EightBall implements Executable {
   }
 
   async getExtendedResponse(userQuery: string) {
-    const selection = await sha256Mod(userQuery, 3);
-    let answerSet = EXTENDED_ANSWER_SETS[selection];
+    const answer = EXTENDED_ANSWERS[_.random(0, EXTENDED_ANSWERS.length - 1)];
 
-    return `${this.eightBallGlyph}: ${
-      answerSet[_.random(0, answerSet.length - 1)]
-    }`;
+    return `${this.eightBallGlyph}: ${answer}`;
   }
 
   async getRandomResponse(userQuery: string) {
     const output: string[] = [this.eightBallGlyph];
 
-    const choice = await sha256Mod(userQuery, 2);
+    const choice = _.random(0, 1);
 
     // Added it for shits and giggles
     if (Math.random() < this.rareResponsePercent) {
