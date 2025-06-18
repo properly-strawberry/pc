@@ -1,6 +1,10 @@
 import { ANSI_LAYOUT } from "./ansiLayout";
 
-export type TypeListener = (char: string | null, keyCode: string) => void;
+export type TypeListener = (
+  char: string | null,
+  keyCode: string,
+  ev: KeyboardEvent
+) => void;
 export type VoidListener = () => void;
 
 export class Keyboard {
@@ -130,7 +134,7 @@ export class Keyboard {
       this._resetAutorepeat();
       this.autorepeatEvent = ev;
     }
-    this.typeListeners.forEach((callback) => callback(char, ev.code));
+    this.typeListeners.forEach((callback) => callback(char, ev.code, ev));
   }
 
   public update(dt: any) {

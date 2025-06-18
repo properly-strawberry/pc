@@ -608,13 +608,17 @@ class PengOS {
         "reboot",
       ];
 
-      const commandString = await readLine(screen, keyboard, {
-        autoCompleteStrings,
-        previousEntries,
-      });
-      previousEntries.push(commandString);
-      if (previousEntries.length > 16) {
-        previousEntries = previousEntries.slice(1);
+      const commandString =
+        (await readLine(screen, keyboard, {
+          autoCompleteStrings,
+          previousEntries,
+        })) ?? "";
+      const trimmedCommandString = commandString.trim();
+      if (trimmedCommandString.length > 0) {
+        previousEntries.push(commandString);
+        if (previousEntries.length > 16) {
+          previousEntries = previousEntries.slice(1);
+        }
       }
       const args = argparse(commandString);
       const commandName = args[0];
