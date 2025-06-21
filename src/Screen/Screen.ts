@@ -5,7 +5,7 @@ import {
 } from "../Color/cgaPalette";
 import { font9x16 } from "./font9x16";
 import { CgaColors } from "../Color/types";
-import { ScreenCharacter, ScreenCharacterAttributes } from "./types";
+import { ScreenBufferCharacter, ScreenCharacterAttributes } from "./types";
 import { Rect, Size, StringLike } from "../types";
 import { getIsPrintable } from "./getIsPrintable";
 import { Vector } from "../Toolbox/Vector";
@@ -66,7 +66,7 @@ export class Screen {
 
   private shouldScrollOnWrite: boolean;
 
-  private screenBuffer: Array<ScreenCharacter>;
+  private screenBuffer: Array<ScreenBufferCharacter>;
 
   constructor() {
     this.widthInCharacters = 80;

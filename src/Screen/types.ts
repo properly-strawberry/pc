@@ -6,5 +6,10 @@ export interface ScreenCharacterAttributes {
 
 export interface ScreenCharacter {
   character: string;
+  attributes?: ScreenCharacterAttributes;
+}
+
+export interface ScreenBufferCharacter {
+  character: string;
   attributes: ScreenCharacterAttributes;
 }
