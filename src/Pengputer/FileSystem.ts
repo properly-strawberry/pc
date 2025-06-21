@@ -59,7 +59,7 @@ export type FileSystemEntry =
   | {
       type: FileSystemObjectType.Executable;
       name: string;
-      data: Executable;
+      createInstance: () => Executable;
     }
   | {
       type: FileSystemObjectType.Audio;

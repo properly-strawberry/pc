@@ -29,6 +29,7 @@ import { ImageFile, TextFile, AudioFile, LinkFile } from "./fileTypes";
 import { argparse } from "../Functions/argparse";
 import { PrintArgs } from "./PrintArgs";
 import { TetrisApp } from "./Tetris";
+import { Ped } from "./Ped";
 
 const PATH_SEPARATOR = "/";
 
@@ -71,12 +72,17 @@ class PengOS {
     this.pc.prompt = "%D%P>";
 
     const rootDirEntry = this.pc.fileSystem.getAtPath([])!;
-    const rootDir = rootDirEntry.data as Directory;
+    const rootDir =
+      rootDirEntry.type === FileSystemObjectType.Directory && rootDirEntry.data;
+
+    if (!rootDir) {
+      throw new Error("Root dir is undefined.");
+    }
 
     rootDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "date.exe",
-      data: new DateApp(this.pc),
+      createInstance: () => new DateApp(this.pc),
     });
 
     const pengOSDir = rootDir.mkdir("pengos");
@@ -105,19 +111,25 @@ class PengOS {
     softwareDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "hello.exe",
-      data: new HelloWorld(this.pc),
+      createInstance: () => new HelloWorld(this.pc),
     });
 
     softwareDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "8ball.exe",
-      data: new EightBall(this.pc),
+      createInstance: () => new EightBall(this.pc),
     });
 
     softwareDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "args.exe",
-      data: new PrintArgs(this.pc),
+      createInstance: () => new PrintArgs(this.pc),
+    });
+
+    softwareDir.addItem({
+      type: FileSystemObjectType.Executable,
+      name: "ped.exe",
+      createInstance: () => new Ped(this.pc),
     });
 
     const gamesDir = rootDir.mkdir("games");
@@ -130,7 +142,7 @@ class PengOS {
     gamesDir.addItem({
       type: FileSystemObjectType.Executable,
       name: "pengtris.exe",
-      data: new TetrisApp(this.pc),
+      createInstance: () => new TetrisApp(this.pc),
     });
 
     const documentsDir = rootDir.mkdir("documents");
@@ -391,7 +403,7 @@ class PengOS {
     const fileEntry = fileSystem.getAtPath([...currentPath, fileName]);
     if (fileEntry) {
       if (fileEntry.type === FileSystemObjectType.Executable) {
-        await fileEntry.data.run(args);
+        await fileEntry.createInstance().run(args);
       } else if (
         fileEntry.type === FileSystemObjectType.Link &&
         fileEntry.openType === "run"
@@ -561,6 +573,8 @@ class PengOS {
 
     let previousEntries: string[] = [];
 
+    await new Ped(this.pc).run([]);
+
     const commands: Record<string, (args: string[]) => void | Promise<void>> = {
       help: this.commandHelp.bind(this),
       h: this.commandHelp.bind(this),
@@ -632,7 +646,7 @@ class PengOS {
         } else if (knownTakenApp) {
           const app = fileSystem.getAtPath(knownTakenApp.path);
           if (app && app.type === FileSystemObjectType.Executable) {
-            app.data.run(args);
+            app.createInstance().run(args);
           } else {
             screen.printString(`Executable not found. Consider dropping`);
           }

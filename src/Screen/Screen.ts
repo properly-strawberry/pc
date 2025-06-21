@@ -65,7 +65,6 @@ export class Screen {
   private charBlinkCounter: number;
 
   private shouldScrollOnWrite: boolean;
-  private shouldWrapOnWrite: boolean;
 
   private screenBuffer: Array<ScreenCharacter>;
 
@@ -100,7 +99,6 @@ export class Screen {
     this.charBlinkCounter = this.charBlinkDuration;
 
     this.shouldScrollOnWrite = true;
-    this.shouldWrapOnWrite = true;
 
     this.screenBuffer = new Array(this.totalCharacters);
     for (let i = 0; i < this.totalCharacters; i += 1) {
@@ -578,7 +576,7 @@ export class Screen {
 
   /** Prints a string of characters to screen using current attributes and moves cursor. */
   printString(string: StringLike) {
-    this.displayString(this.getCursorPosition(), string, undefined, true);
+    this.displayString(this.getCursorPosition(), string, undefined, true, true);
   }
 
   /** Replace string at current cursor position with new string. */
@@ -593,7 +591,8 @@ export class Screen {
     pos: Vector,
     string: StringLike,
     attributes: ScreenCharacterAttributes | undefined = undefined,
-    shouldUpdateCursor: boolean = false
+    shouldUpdateCursor: boolean = false,
+    shouldWrap: boolean = false
   ) {
     let curPos = { x: pos.x, y: pos.y };
 
@@ -632,7 +631,7 @@ export class Screen {
         continue;
       }
 
-      curPos = this._resolveCursorXPosition(curPos, this.shouldWrapOnWrite);
+      curPos = this._resolveCursorXPosition(curPos, shouldWrap);
       while (curPos.y >= this.heightInCharacters) {
         if (this.shouldScrollOnWrite) {
           this.scrollUp(1);
