@@ -8,7 +8,7 @@ export type TypeListener = (
 export type VoidListener = () => void;
 
 export class Keyboard {
-  private pressed: Set<string>;
+  private pressed: string[];
   private werePressed: Set<string>;
   private layout: any;
 
@@ -22,7 +22,7 @@ export class Keyboard {
   private autorepeatEvent: KeyboardEvent | null;
 
   constructor() {
-    this.pressed = new Set();
+    this.pressed = [];
     this.werePressed = new Set();
     this.layout = ANSI_LAYOUT;
 
@@ -41,26 +41,33 @@ export class Keyboard {
 
   private _onKeyDown(e: KeyboardEvent) {
     e.preventDefault();
+    e.stopPropagation();
+
     if (e.repeat) return;
-    this.pressed.add(e.code);
+    this.pressed.push(e.code);
     this.werePressed.add(e.code);
     this._onKeyTyped(e);
   }
 
   private _onKeyUp(e: KeyboardEvent) {
-    this.pressed.delete(e.code);
+    e.preventDefault();
+    e.stopPropagation();
+
+    this.pressed = this.pressed.filter((kc) => kc !== e.code);
     if (this.autorepeatEvent?.code === e.code) {
       this._resetAutorepeat();
     }
-    if (this.pressed.size === 0) {
+    if (this.pressed.length === 0) {
       this.allKeysUpListeners.forEach((callback) => callback());
     }
   }
 
-  public getWasKeyPressed() {
+  /** Get whether any key was pressed since last wasPressed reset. */
+  public getWasKeyPressed(): Set<string> {
     return this.werePressed;
   }
 
+  /** Reset wasPressed state. */
   public resetWereKeysPressed() {
     this.werePressed.clear();
   }
@@ -76,7 +83,23 @@ export class Keyboard {
   }
 
   public getIsKeyPressed(keyCode: string) {
-    return this.pressed.has(keyCode);
+    return this.pressed.includes(keyCode);
+  }
+
+  /** Takes a set of keyCodes. Returns the keyCode that was most recently pressed. Returns `null` otherwise. */
+  public getLastPressedOf(keyCodes: string[]): string | null {
+    let lastPressed = null;
+    let lastPressedIndex = -1;
+
+    for (const keyCode of keyCodes) {
+      let index = this.pressed.findIndex((v) => v === keyCode);
+      if (index > lastPressedIndex) {
+        lastPressed = keyCode;
+        lastPressedIndex = index;
+      }
+    }
+
+    return lastPressed;
   }
 
   public addTypeListener(callback: TypeListener) {
