@@ -667,6 +667,39 @@ class PengOS {
 
   const keyboard = new Keyboard();
 
+  let screenIsShiftDown = false;
+  let screenIsCapsOn = false;
+  const screenKeys = document.querySelectorAll(".row span");
+  for (let screenKey of screenKeys) {
+    screenKey.addEventListener("mousedown", () => {
+      let keyText = screenKey.innerText;
+      if (keyText == "CapLk") {
+        screenIsCapsOn = !screenIsCapsOn;
+        return;
+      }
+      if (keyText == "Shift") {
+        screenIsShiftDown = !screenIsShiftDown;
+        return;
+      }
+
+      let keyCode = screenKey.getAttribute("code");
+      if (keyCode) {
+        keyboard.simulateKeyDown(keyCode, screenIsShiftDown, screenIsCapsOn);
+        screenIsShiftDown = false;
+      }
+    });
+    window.addEventListener("mouseup", () => {
+      let keyCode = screenKey.getAttribute("code");
+      if (keyCode && keyboard.getIsKeyPressed(keyCode)) {
+        keyboard.simulateKeyUp(keyCode);
+      }
+    });
+  }
+
+  screen.clear();
+  screen.drawSomeText();
+  screen.displayString({ x: 1, y: 15 }, "Get scrolled, nerd :P");
+
   let lastTime = performance.now();
   const cb = () => {
     const dt = performance.now() - lastTime;
