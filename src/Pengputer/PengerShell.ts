@@ -3,19 +3,21 @@
  * Description: Implements the
  */
 
-import { Executable } from "./FileSystem";
 import {
+  PATH_SEPARATOR,
   DriveLabel,
   isDriveLabel,
-  FileSystem,
+  Executable,
+  FilePath,
   FileSystemObjectType,
+  FileSystem,
+  FloppyStorage,
+  FloppySerialized,
 } from "./FileSystem";
-import { FilePath, FloppyStorage, FloppySerialized } from "./FileSystem";
-import { PATH_SEPARATOR, LSKEY_FLOPPIES } from "./FileSystem";
+
 import { PC } from "./PC";
 
 import { argparse } from "../Toolbox/argparse";
-
 import { classicColors } from "../Color/ansi";
 
 import _ from "lodash";
@@ -23,6 +25,208 @@ import _ from "lodash";
 interface TakenProgram {
   path: FilePath;
   name: string;
+}
+
+export enum ShellTokenKind {
+  Word = "word",
+  Operator = "operator",
+}
+
+export enum ShellTokenMetaKind {
+  None = "none",
+}
+
+export type ShellTokenMeta = {
+  kind: ShellTokenMetaKind.None;
+};
+
+export interface ShellToken {
+  start: number;
+  end: number;
+  kind: ShellTokenKind;
+  meta: ShellTokenMeta;
+  text: string;
+}
+
+const metaCharacters = [
+  "(",
+  ")",
+  "[",
+  "]",
+  "{",
+  "}",
+  "$",
+  "&",
+  "*",
+  "|",
+  "<",
+  ">",
+  ";",
+  "?",
+];
+
+const shellParameterCharacters = [
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "_",
+];
+
+function readShellCharacter(
+  commandText: string,
+  index: number,
+): { character: string; nextIndex: number; isEscape: boolean } | null {
+  if (index < 0 || index >= commandText.length) {
+    return null;
+  }
+
+  const currentChar = commandText[index];
+  if (index < commandText.length - 1 && currentChar === "\\") {
+    const nextChar = commandText[index + 1];
+    if (nextChar === '"') {
+      return { character: '"', nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === " ") {
+      return { character: " ", nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === "\\") {
+      return { character: "\\", nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === "\n") {
+      const peekChar = readShellCharacter(commandText, index + 2);
+      if (peekChar === null) {
+        return null;
+      }
+
+      peekChar.nextIndex += 2;
+      return peekChar;
+    } else if (isShellMetaCharacter(nextChar)) {
+      return { character: nextChar, nextIndex: index + 2, isEscape: true };
+    }
+  }
+
+  return {
+    character: currentChar,
+    nextIndex: index + 1,
+    isEscape: false,
+  };
+}
+
+export function isShellWhiteSpaceCharacter(character: string) {
+  return character === " " || character === "\t";
+}
+
+export function isShellMetaCharacter(character: string) {
+  return metaCharacters.indexOf(character) >= 0;
+}
+
+function isValidShellWordCharacter(char: string) {
+  if (isShellWhiteSpaceCharacter(char)) {
+    return false;
+  }
+
+  return !isShellMetaCharacter(char) || ["*", "?", "[", "]"].indexOf(char) >= 0;
+}
+
+export function readShellToken(
+  commandText: string,
+  index: number,
+): ShellToken | null {
+  let startIndex = index;
+  let endIndex = index;
+
+  let tokenKind = ShellTokenKind.Word;
+  let tokenMeta = { kind: ShellTokenMetaKind.None };
+  let tokenText = "";
+
+  while (
+    startIndex < commandText.length &&
+    isShellWhiteSpaceCharacter(commandText[startIndex])
+  ) {
+    startIndex += 1;
+  }
+
+  endIndex = startIndex;
+  if (endIndex === commandText.length) {
+    return null;
+  }
+
+  if (commandText[endIndex] === '"') {
+    endIndex += 1;
+
+    let char = readShellCharacter(commandText, endIndex);
+    while (char && (char.character !== '"' || char.isEscape)) {
+      tokenText += char.character;
+      endIndex = char.nextIndex;
+      char = readShellCharacter(commandText, endIndex);
+    }
+
+    // if we stopped reading the quoted word without being at the commandText's end, this will consume the quote which stopped us reading it.
+    endIndex = Math.min(endIndex + 1, commandText.length);
+  } else {
+    const c = commandText[endIndex];
+    const nc = commandText[endIndex + 1];
+
+    const readWord = () => {
+      let char = readShellCharacter(commandText, endIndex);
+      while (
+        char &&
+        (char.isEscape ||
+          isValidShellWordCharacter(char.character) ||
+          (tokenText.length === 0 && char.character === "$"))
+      ) {
+        tokenText += char.character;
+        endIndex = char.nextIndex;
+        char = readShellCharacter(commandText, endIndex);
+      }
+    };
+
+    if (c === "$" && nc === "(") {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = "$(";
+      endIndex = endIndex + 2;
+    } else if (c === "$" && shellParameterCharacters.indexOf(nc) >= 0) {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = "$" + nc;
+      endIndex = endIndex + 2;
+    } else if (c === "$" && isValidShellWordCharacter(nc)) {
+      readWord();
+    } else if (c === ">" && nc === ">") {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = ">>";
+      endIndex = endIndex + 2;
+    } else if (!isValidShellWordCharacter(c) && isShellMetaCharacter(c)) {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = c;
+      endIndex = endIndex + 1;
+    } else {
+      readWord();
+    }
+  }
+
+  return {
+    start: startIndex,
+    end: endIndex,
+    kind: tokenKind,
+    meta: tokenMeta,
+    text: tokenText,
+  };
+}
+
+export function readShellTokens(commandText: string): ShellToken[] {
+  let i = 0;
+  let args = [];
+  let token = readShellToken(commandText, i);
+  while (token !== null) {
+    args.push(token);
+    i = token.end;
+    token = readShellToken(commandText, i);
+  }
+  return args;
 }
 
 export class PengerShell implements Executable {
