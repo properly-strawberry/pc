@@ -1,5 +1,6 @@
-export function assert(value: unknown, reason: string = "") {
-  if (value !== true) {
+/** Throws error if condition is falsy. Does not provide any type safety. */
+export function assert(condition: unknown, reason: string = "") {
+  if (!condition) {
     throw new Error(`Assertion failed${reason ? `: ${reason}` : ""}`);
   }
 }

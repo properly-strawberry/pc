@@ -177,6 +177,7 @@ export class TextBuffer {
   public isDirty: boolean;
   public bellRequested: boolean = false;
   private scrollbackLength: number;
+  private linesScrolled: number = 0;
 
   constructor({
     pageSize,
@@ -327,8 +328,7 @@ export class TextBuffer {
     curPos.y += 1;
     if (curPos.y === this.pageSize.h) {
       curPos.y -= 1;
-      this.buffer.push(new Line(this.pageSize.w, this.currentAttributes));
-      this.isDirty = true;
+      this.scrollDownBy(1);
     }
     this.cursor.setPosition(curPos);
   }
@@ -361,6 +361,7 @@ export class TextBuffer {
       this.buffer.push(new Line(this.pageSize.w, this.currentAttributes));
     }
     this.isDirty = true;
+    this.linesScrolled += 1;
   }
 
   public scrollUpBy(numRows: number): void {
@@ -371,6 +372,7 @@ export class TextBuffer {
       );
     }
     this.isDirty = true;
+    this.linesScrolled -= 1;
   }
 
   public eraseDown() {
@@ -429,5 +431,6 @@ export class TextBuffer {
     }
 
     this.isDirty = true;
+    this.linesScrolled = 0;
   }
 }
