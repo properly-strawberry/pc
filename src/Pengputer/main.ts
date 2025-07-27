@@ -216,6 +216,7 @@ class PengOS {
         await this.runShell();
         await this.runStartupAnimation();
       } catch (e) {
+        console.dir(e);
         std.writeConsoleError(e);
       }
     } while (true);

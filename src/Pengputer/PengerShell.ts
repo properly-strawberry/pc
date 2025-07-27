@@ -3,19 +3,21 @@
  * Description: Implements the
  */
 
-import { Executable } from "./FileSystem";
 import {
+  PATH_SEPARATOR,
   DriveLabel,
   isDriveLabel,
-  FileSystem,
+  Executable,
+  FilePath,
   FileSystemObjectType,
+  FileSystem,
+  FloppyStorage,
+  FloppySerialized,
 } from "./FileSystem";
-import { FilePath, FloppyStorage, FloppySerialized } from "./FileSystem";
-import { PATH_SEPARATOR, LSKEY_FLOPPIES } from "./FileSystem";
+
 import { PC } from "./PC";
 
 import { argparse } from "../Toolbox/argparse";
-
 import { classicColors } from "../Color/ansi";
 
 import _ from "lodash";
@@ -23,6 +25,332 @@ import _ from "lodash";
 interface TakenProgram {
   path: FilePath;
   name: string;
+}
+
+export enum ShellTokenKind {
+  Word = "word",
+  Operator = "operator",
+}
+
+export enum ShellTokenMetaKind {
+  None = "none",
+}
+
+export type ShellTokenMeta = {
+  kind: ShellTokenMetaKind.None;
+};
+
+export interface ShellToken {
+  start: number;
+  end: number;
+  kind: ShellTokenKind;
+  meta: ShellTokenMeta;
+  text: string;
+}
+
+export enum ShellCommandKind {
+  Simple = "simple",
+  Group = "group",
+  Pipeline = "pipeline",
+  List = "list",
+  Function = "function",
+}
+
+export interface ShellSimpleCommand {
+  kind: ShellCommandKind.Simple;
+  command: string;
+  arguments: string[];
+}
+
+export interface ShellGroupCommand {
+  kind: ShellCommandKind.Group;
+  commands: ShellCommandList;
+  useSubprocess: boolean;
+}
+
+export interface ShellPipelineCommand {
+  kind: ShellCommandKind.Pipeline;
+  commands: (ShellSimpleCommand | ShellGroupCommand)[];
+}
+
+export interface ShellCommandList {
+  kind: ShellCommandKind.List;
+  commands: (ShellSimpleCommand | ShellGroupCommand | ShellPipelineCommand)[];
+}
+
+export interface ShellFunction {
+  kind: ShellCommandKind.Function;
+  name: string;
+  parameterAliases: string[];
+  body: ShellGroupCommand;
+  // TODO(local): redirections?
+}
+
+export type ShellCommand =
+  | ShellSimpleCommand
+  | ShellGroupCommand
+  | ShellPipelineCommand
+  | ShellCommandList
+  | ShellFunction;
+
+const metaCharacters = [
+  "(",
+  ")",
+  "[",
+  "]",
+  "{",
+  "}",
+  "$",
+  "&",
+  "*",
+  "|",
+  "<",
+  ">",
+  ";",
+  "?",
+];
+
+const shellParameterCharacters = [
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "_",
+];
+
+function readShellCharacter(
+  commandText: string,
+  index: number,
+): { character: string; nextIndex: number; isEscape: boolean } | null {
+  if (index < 0 || index >= commandText.length) {
+    return null;
+  }
+
+  const currentChar = commandText[index];
+  if (index < commandText.length - 1 && currentChar === "\\") {
+    const nextChar = commandText[index + 1];
+    if (nextChar === '"') {
+      return { character: '"', nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === " ") {
+      return { character: " ", nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === "\\") {
+      return { character: "\\", nextIndex: index + 2, isEscape: true };
+    } else if (nextChar === "\n") {
+      const peekChar = readShellCharacter(commandText, index + 2);
+      if (peekChar === null) {
+        return null;
+      }
+
+      peekChar.nextIndex += 2;
+      return peekChar;
+    } else if (isShellMetaCharacter(nextChar)) {
+      return { character: nextChar, nextIndex: index + 2, isEscape: true };
+    }
+  }
+
+  return {
+    character: currentChar,
+    nextIndex: index + 1,
+    isEscape: false,
+  };
+}
+
+export function isShellWhiteSpaceCharacter(character: string) {
+  return character === " " || character === "\t";
+}
+
+export function isShellMetaCharacter(character: string) {
+  return metaCharacters.indexOf(character) >= 0;
+}
+
+function isValidShellWordCharacter(char: string) {
+  if (isShellWhiteSpaceCharacter(char)) {
+    return false;
+  }
+
+  return !isShellMetaCharacter(char) || ["*", "?", "[", "]"].indexOf(char) >= 0;
+}
+
+export function readShellToken(
+  commandText: string,
+  index: number,
+): ShellToken | null {
+  let startIndex = index;
+  let endIndex = index;
+
+  let tokenKind = ShellTokenKind.Word;
+  let tokenMeta = { kind: ShellTokenMetaKind.None };
+  let tokenText = "";
+
+  while (
+    startIndex < commandText.length &&
+    isShellWhiteSpaceCharacter(commandText[startIndex])
+  ) {
+    startIndex += 1;
+  }
+
+  endIndex = startIndex;
+  if (endIndex === commandText.length) {
+    return null;
+  }
+
+  if (commandText[endIndex] === '"') {
+    endIndex += 1;
+
+    let char = readShellCharacter(commandText, endIndex);
+    while (
+      char &&
+      (char.character !== '"' || char.isEscape) &&
+      char.character !== "\n"
+    ) {
+      tokenText += char.character;
+      endIndex = char.nextIndex;
+      char = readShellCharacter(commandText, endIndex);
+    }
+
+    // if we stopped reading the quoted word without being at the commandText's end, this will consume the quote which stopped us reading it.
+    endIndex = Math.min(endIndex + 1, commandText.length);
+  } else {
+    const c = commandText[endIndex];
+    const nc = commandText[endIndex + 1];
+
+    const readWord = () => {
+      let char = readShellCharacter(commandText, endIndex);
+      while (
+        char &&
+        (char.isEscape ||
+          isValidShellWordCharacter(char.character) ||
+          (tokenText.length === 0 && char.character === "$")) &&
+        char.character !== "\n"
+      ) {
+        tokenText += char.character;
+        endIndex = char.nextIndex;
+        char = readShellCharacter(commandText, endIndex);
+      }
+    };
+
+    if (c === "\n") {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = "\n";
+      endIndex = endIndex + 1;
+    } else if (c === "$" && nc === "(") {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = "$(";
+      endIndex = endIndex + 2;
+    } else if (c === "$" && shellParameterCharacters.indexOf(nc) >= 0) {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = "$" + nc;
+      endIndex = endIndex + 2;
+    } else if (c === "$" && isValidShellWordCharacter(nc)) {
+      readWord();
+    } else if (c === ">" && nc === ">") {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = ">>";
+      endIndex = endIndex + 2;
+    } else if (!isValidShellWordCharacter(c) && isShellMetaCharacter(c)) {
+      tokenKind = ShellTokenKind.Operator;
+      tokenText = c;
+      endIndex = endIndex + 1;
+    } else {
+      readWord();
+    }
+  }
+
+  return {
+    start: startIndex,
+    end: endIndex,
+    kind: tokenKind,
+    meta: tokenMeta,
+    text: tokenText,
+  };
+}
+
+export function readShellTokens(commandText: string): ShellToken[] {
+  let i = 0;
+  let args = [];
+  let token = readShellToken(commandText, i);
+  while (token !== null) {
+    args.push(token);
+    i = token.end;
+    token = readShellToken(commandText, i);
+  }
+  return args;
+}
+
+export function parseShellCommand(
+  tokens: ShellToken[],
+  index: number,
+): { nextIndex: number; command: ShellCommand | null } {
+  if (index < 0 || index >= tokens.length) {
+    return { nextIndex: index, command: null };
+  }
+
+  const atEnd = () => {
+    return index >= tokens.length;
+  };
+
+  const peekToken = (ahead: number): ShellToken | null => {
+    if (ahead < 0 || ahead + index >= tokens.length) {
+      return null;
+    }
+
+    return tokens[index + ahead];
+  };
+
+  const eatToken = (): ShellToken => {
+    if (index < 0 || index >= tokens.length) {
+      throw new Error(
+        "Should never call eatToken if you haven't checked one exists first.",
+      );
+    }
+
+    const token = tokens[index];
+    index += 1;
+    return token;
+  };
+
+  const checkOperator = (ahead: number, text: string): boolean => {
+    const token = peekToken(ahead);
+    return (
+      token !== null &&
+      token.kind === ShellTokenKind.Operator &&
+      token.text === text
+    );
+  };
+
+  const parseSimpleCommand = (): ShellSimpleCommand | null => {
+    let words: string[] = [];
+    while (!atEnd() && peekToken(0)!.kind === ShellTokenKind.Word) {
+      words.push(eatToken().text);
+    }
+
+    if (words.length === 0) {
+      return null;
+    }
+
+    let [commandWord, ...argumentWords] = words;
+    return {
+      kind: ShellCommandKind.Simple,
+      command: commandWord,
+      arguments: argumentWords,
+    };
+  };
+
+  const simpleCommand = parseSimpleCommand();
+  if (simpleCommand === null) {
+    throw new Error("Expected a shell command");
+  }
+
+  return {
+    nextIndex: index,
+    command: simpleCommand,
+  };
 }
 
 export class PengerShell implements Executable {
@@ -161,6 +489,7 @@ export class PengerShell implements Executable {
           previousEntries,
         })) ??
         "";
+
       const trimmedCommandString = commandString.trim();
       if (trimmedCommandString.length > 0) {
         previousEntries.push(commandString);
@@ -168,28 +497,47 @@ export class PengerShell implements Executable {
           previousEntries = previousEntries.slice(1);
         }
       }
-      const args = argparse(commandString);
-      const commandName = args[0];
-      if (commandName) {
+
+      const tokens = readShellTokens(commandString);
+      const { nextIndex, command } = parseShellCommand(tokens, 0);
+
+      if (command === null) {
+        std.writeConsole("Unable to parse a command, try something simpler\n");
+        continue;
+      }
+
+      if (nextIndex < tokens.length) {
+        std.writeConsole("Extra tokens at the end of the command\n");
+        continue;
+      }
+
+      if (command.kind === ShellCommandKind.Simple) {
+        const commandName: string = command.command;
+
         const knownCommand = commands[commandName.toLowerCase()];
         const knownTakenApp = this.takenPrograms.find(
           (p) => p.name === commandName,
         );
+
         if (knownCommand) {
-          await knownCommand(args.slice(1));
+          await knownCommand(command.arguments);
           std.resetConsole();
         } else if (knownTakenApp) {
           const app = fileSystem.getFileInfo(knownTakenApp.path);
           if (app && app.type === FileSystemObjectType.Executable) {
-            await app.createInstance().run(args);
+            await app.createInstance().run(command.arguments);
             std.resetConsole();
           } else {
             std.writeConsole(`Executable not found. Consider dropping`);
           }
         } else {
-          std.writeConsole("Unknown command: " + commandName + "\n");
+          std.writeConsole(`Unknown command: ${commandName}\n`);
           std.writeConsole('Try "help" or "h" to see available commands\n');
         }
+      } else {
+        std.writeConsole(
+          "Unimplemented command type, try something simpler for now please\n",
+        );
       }
     }
   }
